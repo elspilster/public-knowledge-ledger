@@ -17,37 +17,49 @@ class KeyRecord:
 
 class KeyRegistry:
     def __init__(self) -> None:
-        self._keys: dict[str, KeyRecord] = {}
+        self._keys: dict[str, list[KeyRecord]] = {}
 
     def register(self, record: KeyRecord) -> None:
-        active = [r for r in self._keys.values() if r.contributor_id == record.contributor_id and r.revoked_at_event is None]
+        versions = self._keys.get(record.key_id, [])
+        if versions:
+            if any(r.revoked_at_event is None for r in versions):
+                raise ValueError(f"Key already registered: {record.key_id}")
+        active = [
+            r for records in self._keys.values() for r in records
+            if r.contributor_id == record.contributor_id and r.revoked_at_event is None
+        ]
         if active:
             raise ValueError(f"Contributor already has an active key: {record.contributor_id}")
-        if record.key_id in self._keys:
-            raise ValueError(f"Key already registered: {record.key_id}")
-        self._keys[record.key_id] = record
+        self._keys.setdefault(record.key_id, []).append(record)
 
     def revoke(self, key_id: str, revoked_at_event: str, replaced_by: str | None = None) -> KeyRecord:
-        record = self._keys[key_id]
-        if record.revoked_at_event is not None:
+        versions = self._keys[key_id]
+        record = next((r for r in reversed(versions) if r.revoked_at_event is None), None)
+        if record is None:
             raise ValueError(f"Key already revoked: {key_id}")
         if replaced_by is not None and replaced_by == key_id:
-            raise ValueError("A key cannot replace itself")
+            # A stable key identity may rotate to a new cryptographic key while
+            # retaining the same logical key_id. The new version is registered
+            # only after this version has been revoked.
+            pass
         updated = KeyRecord(record.contributor_id, record.key_id, record.public_key, record.valid_from_event, revoked_at_event, replaced_by)
-        self._keys[key_id] = updated
+        versions[versions.index(record)] = updated
         return updated
 
     def get(self, key_id: str) -> KeyRecord:
-        return self._keys[key_id]
+        versions = self._keys[key_id]
+        return next((r for r in reversed(versions) if r.revoked_at_event is None), versions[-1])
 
     def is_valid_at(self, key_id: str, event_position: int, positions: dict[str, int]) -> bool:
-        record = self._keys[key_id]
-        start = positions[record.valid_from_event]
-        if event_position < start:
-            return False
-        if record.revoked_at_event is None:
-            return True
-        return event_position < positions[record.revoked_at_event]
+        versions = self._keys[key_id]
+        for record in reversed(versions):
+            start = positions[record.valid_from_event]
+            if event_position < start:
+                continue
+            if record.revoked_at_event is None:
+                return True
+            return event_position < positions[record.revoked_at_event]
+        return False
 
     def public_keys(self) -> dict[str, bytes]:
-        return {key_id: record.public_key for key_id, record in self._keys.items()}
+        return {key_id: self.get(key_id).public_key for key_id in self._keys}
