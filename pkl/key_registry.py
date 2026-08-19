@@ -20,17 +20,19 @@ class KeyRegistry:
         self._keys: dict[str, KeyRecord] = {}
 
     def register(self, record: KeyRecord) -> None:
-        if record.key_id in self._keys:
-            raise ValueError(f"Key already registered: {record.key_id}")
         active = [r for r in self._keys.values() if r.contributor_id == record.contributor_id and r.revoked_at_event is None]
         if active:
             raise ValueError(f"Contributor already has an active key: {record.contributor_id}")
+        if record.key_id in self._keys:
+            raise ValueError(f"Key already registered: {record.key_id}")
         self._keys[record.key_id] = record
 
     def revoke(self, key_id: str, revoked_at_event: str, replaced_by: str | None = None) -> KeyRecord:
         record = self._keys[key_id]
         if record.revoked_at_event is not None:
             raise ValueError(f"Key already revoked: {key_id}")
+        if replaced_by is not None and replaced_by == key_id:
+            raise ValueError("A key cannot replace itself")
         updated = KeyRecord(record.contributor_id, record.key_id, record.public_key, record.valid_from_event, revoked_at_event, replaced_by)
         self._keys[key_id] = updated
         return updated
