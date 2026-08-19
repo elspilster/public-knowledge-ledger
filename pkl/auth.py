@@ -12,8 +12,10 @@ from dataclasses import dataclass
 from .audit import _canonical_event_data
 
 try:
+    from cryptography.exceptions import InvalidSignature
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
 except ImportError:  # pragma: no cover
+    InvalidSignature = ValueError  # type: ignore[assignment,misc]
     Ed25519PrivateKey = None  # type: ignore[assignment,misc]
     Ed25519PublicKey = None  # type: ignore[assignment,misc]
 
@@ -52,5 +54,5 @@ def verify_event_signature(public_key: bytes, signature: str, event_id: str, eve
         data = _canonical_event_data(event_id, event_type, object_id, timestamp, payload, previous_hash)
         public.verify(bytes.fromhex(signature), data)
         return True
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, InvalidSignature):
         return False
