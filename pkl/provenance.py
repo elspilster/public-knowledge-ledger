@@ -29,6 +29,14 @@ DEPENDENCY_RELATIONS = {
     "same_experiment",
 }
 
+CONFLICTING_RELATIONS = {
+    frozenset({"independent_of", "derived_from"}),
+    frozenset({"independent_of", "cites"}),
+    frozenset({"independent_of", "duplicates"}),
+    frozenset({"independent_of", "same_dataset"}),
+    frozenset({"independent_of", "same_experiment"}),
+}
+
 
 @dataclass(frozen=True)
 class ProvenanceEdge:
@@ -56,20 +64,37 @@ class ProvenanceGraph:
             if edge.source_id == evidence_id or edge.target_id == evidence_id
         ]
 
-    def direct_relation(self, first_id: str, second_id: str) -> Relation | None:
+    def direct_relations(self, first_id: str, second_id: str) -> set[Relation]:
+        relations: set[Relation] = set()
         for edge in self.edges:
-            if (edge.source_id, edge.target_id) == (first_id, second_id):
-                return edge.relation
-            if (edge.source_id, edge.target_id) == (second_id, first_id):
-                return edge.relation
+            if {edge.source_id, edge.target_id} == {first_id, second_id}:
+                relations.add(edge.relation)
+        return relations
+
+    def direct_relation(self, first_id: str, second_id: str) -> Relation | None:
+        relations = self.direct_relations(first_id, second_id)
+        if not relations:
+            return None
+        if len(relations) == 1:
+            return next(iter(relations))
+        # Preserve the old API while refusing to silently choose one of several
+        # contradictory relationships. Callers needing detail should use
+        # direct_relations() or independence_hint().
         return None
+
+    def conflicting_relationships(self, first_id: str, second_id: str) -> bool:
+        relations = self.direct_relations(first_id, second_id)
+        for pair in CONFLICTING_RELATIONS:
+            if pair.issubset(relations):
+                return True
+        return False
 
     def _reachable_via_dependency(self, start_id: str) -> set[str]:
         """Return nodes connected to start through dependency-like edges.
 
-        This is deliberately conservative: a provenance connection is enough
-        to flag a relationship for review, but it does not by itself prove
-        that two observations are scientifically non-independent.
+        Cycles are safe because visited nodes are tracked. A provenance
+        connection flags a relationship for review; it does not by itself
+        prove scientific non-independence.
         """
         seen = {start_id}
         stack = [start_id]
@@ -93,13 +118,10 @@ class ProvenanceGraph:
         return self._reachable_via_dependency(evidence_id)
 
     def independence_hint(self, first_id: str, second_id: str) -> str:
-        """Return a conservative hint; final independence requires review.
+        """Return a conservative hint; final independence requires review."""
+        if self.conflicting_relationships(first_id, second_id):
+            return "conflicting_provenance_requires_review"
 
-        Direct duplication, citation, shared datasets, shared experiments, or
-        derived provenance are evidence against treating two items as
-        independent. An explicit independent_of relation is evidence in
-        favour, but is not by itself proof.
-        """
         relation = self.direct_relation(first_id, second_id)
         if relation in DEPENDENCY_RELATIONS:
             return "not_independent_or_requires_review"
