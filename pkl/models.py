@@ -29,6 +29,20 @@ Status = Literal[
     "rejected",
 ]
 
+INDEPENDENCE_LEVELS = {f"I{i}" for i in range(5)}
+PROFILE_DIMENSIONS = (
+    "methodology_quality",
+    "source_quality",
+    "independence",
+    "replication",
+    "sample_data_strength",
+    "bias_risk",
+    "transparency",
+    "predictive_success",
+    "contradictory_evidence",
+    "relevance",
+)
+
 
 @dataclass
 class EvidenceProfile:
@@ -43,6 +57,25 @@ class EvidenceProfile:
     contradictory_evidence: int | None = None
     relevance: int | None = None
     independence_level: str = "I0"
+
+    def validate(self) -> None:
+        """Validate independently recorded profile dimensions.
+
+        Dimensions use a simple 0-5 ordinal scale. PKL intentionally does not
+        aggregate these values into a single confidence score.
+        """
+        for name in PROFILE_DIMENSIONS:
+            value = getattr(self, name)
+            if value is not None and not isinstance(value, int):
+                raise ValueError(f"{name} must be an integer from 0 to 5 or None")
+            if value is not None and not 0 <= value <= 5:
+                raise ValueError(f"{name} must be between 0 and 5")
+        if self.independence_level not in INDEPENDENCE_LEVELS:
+            raise ValueError(f"Invalid independence level: {self.independence_level}")
+
+    def as_dict(self) -> dict[str, Any]:
+        self.validate()
+        return asdict(self)
 
 
 @dataclass

@@ -11,6 +11,7 @@ class ReplayState:
     claims: dict[str, dict[str, Any]] = field(default_factory=dict)
     evidence: dict[str, dict[str, Any]] = field(default_factory=dict)
     challenges: dict[str, dict[str, Any]] = field(default_factory=dict)
+    provenance: list[dict[str, Any]] = field(default_factory=list)
     keys: dict[str, dict[str, Any]] = field(default_factory=dict)
 
 
@@ -56,7 +57,34 @@ def apply_event(state: ReplayState, event_type: str, object_id: str, payload: di
         claim_id = payload["claim_id"]
         if claim_id not in state.claims:
             raise ValueError(f"Evidence references unknown claim: {claim_id}")
-        state.evidence[object_id] = {"id": object_id, "claim_id": claim_id, "title": payload["title"], "description": payload["description"], "source": payload.get("source"), "contributor_id": payload.get("contributor_id"), "supports_claim": payload.get("supports_claim")}
+        profile = dict(payload.get("profile", {}))
+        profile.setdefault("independence_level", "I0")
+        state.evidence[object_id] = {
+            "id": object_id,
+            "claim_id": claim_id,
+            "title": payload["title"],
+            "description": payload["description"],
+            "source": payload.get("source"),
+            "contributor_id": payload.get("contributor_id"),
+            "supports_claim": payload.get("supports_claim"),
+            "profile": profile,
+        }
+        return
+
+    if event_type == "evidence.profile_updated":
+        if object_id not in state.evidence:
+            raise ValueError(f"Profile references unknown evidence: {object_id}")
+        state.evidence[object_id]["profile"] = dict(payload["profile"])
+        return
+
+    if event_type == "evidence.provenance_linked":
+        source_id = payload["source_id"]
+        target_id = payload["target_id"]
+        if source_id not in state.evidence or target_id not in state.evidence:
+            raise ValueError("Provenance link references unknown evidence")
+        edge = {"source_id": source_id, "target_id": target_id, "relation": payload["relation"], "note": payload.get("note", "")}
+        if edge not in state.provenance:
+            state.provenance.append(edge)
         return
 
     if event_type == "challenge.created":

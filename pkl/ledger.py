@@ -7,7 +7,8 @@ from typing import Any
 
 from .audit import AuditChain
 from .key_registry import KeyRecord, KeyRegistry
-from .models import Assessment, Challenge, Claim, Evidence, new_id, utc_now
+from .models import Assessment, Challenge, Claim, Evidence, EvidenceProfile, new_id, utc_now
+from .provenance import ProvenanceGraph, Relation
 from .replay import replay
 
 
@@ -25,6 +26,7 @@ class Ledger:
     claims: dict[str, Claim] = field(default_factory=dict)
     evidence: dict[str, Evidence] = field(default_factory=dict)
     challenges: dict[str, Challenge] = field(default_factory=dict)
+    provenance: ProvenanceGraph = field(default_factory=ProvenanceGraph)
     events: list[LedgerEvent] = field(default_factory=list)
     audit: AuditChain = field(default_factory=AuditChain)
     keys: KeyRegistry = field(default_factory=KeyRegistry)
@@ -72,16 +74,73 @@ class Ledger:
         self._record_claim_event("claim.created", claim.id, {"text": text, "contributor_id": contributor_id})
         return claim
 
-    def add_evidence(self, claim_id: str, title: str, description: str, *, source: str | None = None, contributor_id: str | None = None, supports_claim: bool | None = None) -> Evidence:
+    def add_evidence(
+        self,
+        claim_id: str,
+        title: str,
+        description: str,
+        *,
+        source: str | None = None,
+        contributor_id: str | None = None,
+        supports_claim: bool | None = None,
+        profile: EvidenceProfile | None = None,
+    ) -> Evidence:
         if claim_id not in self.claims:
             raise KeyError(f"Unknown claim: {claim_id}")
         if not title or not description:
             raise ValueError("Evidence title and description are required")
-        evidence = Evidence(id=new_id("EVD"), claim_id=claim_id, title=title, description=description, source=source, contributor_id=contributor_id, supports_claim=supports_claim)
+        profile = profile or EvidenceProfile()
+        profile.validate()
+        evidence = Evidence(
+            id=new_id("EVD"),
+            claim_id=claim_id,
+            title=title,
+            description=description,
+            source=source,
+            contributor_id=contributor_id,
+            supports_claim=supports_claim,
+            profile=profile,
+        )
         self.evidence[evidence.id] = evidence
         self.claims[claim_id].evidence_ids.append(evidence.id)
-        self._record("evidence.added", evidence.id, {"claim_id": claim_id, "title": title, "description": description, "source": source, "contributor_id": contributor_id, "supports_claim": supports_claim})
+        self._record(
+            "evidence.added",
+            evidence.id,
+            {
+                "claim_id": claim_id,
+                "title": title,
+                "description": description,
+                "source": source,
+                "contributor_id": contributor_id,
+                "supports_claim": supports_claim,
+                "profile": profile.as_dict(),
+            },
+        )
         return evidence
+
+    def update_evidence_profile(self, evidence_id: str, profile: EvidenceProfile) -> Evidence:
+        if evidence_id not in self.evidence:
+            raise KeyError(f"Unknown evidence: {evidence_id}")
+        profile.validate()
+        evidence = self.evidence[evidence_id]
+        evidence.profile = profile
+        self._record("evidence.profile_updated", evidence_id, {"profile": profile.as_dict()})
+        return evidence
+
+    def link_evidence(self, source_id: str, target_id: str, relation: Relation, note: str = "") -> None:
+        if source_id not in self.evidence or target_id not in self.evidence:
+            raise KeyError("Provenance links must reference known evidence")
+        edge = self.provenance.add(source_id, target_id, relation, note)
+        self._record(
+            "evidence.provenance_linked",
+            source_id,
+            {"source_id": edge.source_id, "target_id": edge.target_id, "relation": edge.relation, "note": edge.note},
+        )
+
+    def evidence_independence(self, first_id: str, second_id: str) -> str:
+        if first_id not in self.evidence or second_id not in self.evidence:
+            raise KeyError("Independence checks must reference known evidence")
+        return self.provenance.independence_hint(first_id, second_id)
 
     def challenge_claim(self, claim_id: str, description: str, *, challenger_id: str | None = None, counter_evidence_ids: list[str] | None = None) -> Challenge:
         if claim_id not in self.claims:
@@ -122,24 +181,25 @@ class Ledger:
     def verify_history(self) -> bool:
         return self.audit.verify()
 
-    def replay_state(self) -> dict[str, dict[str, Any]]:
+    def replay_state(self) -> dict[str, Any]:
         state = replay(self.audit.events)
-        return {"claims": state.claims, "evidence": state.evidence, "challenges": state.challenges}
+        return {"claims": state.claims, "evidence": state.evidence, "challenges": state.challenges, "provenance": state.provenance}
 
-    def current_state(self) -> dict[str, dict[str, Any]]:
+    def current_state(self) -> dict[str, Any]:
         return {
             "claims": {
                 key: {"id": claim.id, "text": claim.text, "contributor_id": claim.contributor_id, "status": claim.status, "evidence_level": claim.assessment.evidence_level, "summary": claim.assessment.summary}
                 for key, claim in self.claims.items()
             },
             "evidence": {
-                key: {"id": item.id, "claim_id": item.claim_id, "title": item.title, "description": item.description, "source": item.source, "contributor_id": item.contributor_id, "supports_claim": item.supports_claim}
+                key: {"id": item.id, "claim_id": item.claim_id, "title": item.title, "description": item.description, "source": item.source, "contributor_id": item.contributor_id, "supports_claim": item.supports_claim, "profile": item.profile.as_dict()}
                 for key, item in self.evidence.items()
             },
             "challenges": {
                 key: {"id": item.id, "target_id": item.target_id, "description": item.description, "challenger_id": item.challenger_id, "counter_evidence_ids": item.counter_evidence_ids}
                 for key, item in self.challenges.items()
             },
+            "provenance": [edge.__dict__.copy() for edge in self.provenance.edges],
         }
 
     def _events_match_audit(self) -> bool:

@@ -8,6 +8,7 @@ from typing import Any
 from .audit import AuditChain, AuditEvent
 from .ledger import Ledger, LedgerEvent
 from .models import Assessment, Challenge, Claim, Evidence, EvidenceProfile
+from .provenance import ProvenanceEdge
 
 
 def export_ledger(ledger: Ledger) -> str:
@@ -18,6 +19,7 @@ def export_ledger(ledger: Ledger) -> str:
         "claims": {k: _claim(v) for k, v in ledger.claims.items()},
         "evidence": {k: _evidence(v) for k, v in ledger.evidence.items()},
         "challenges": {k: _challenge(v) for k, v in ledger.challenges.items()},
+        "provenance": [edge.__dict__ for edge in ledger.provenance.edges],
     }
     return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
@@ -32,6 +34,8 @@ def import_ledger(data: str) -> Ledger:
     ledger.claims = {k: _claim_from(v) for k, v in raw["claims"].items()}
     ledger.evidence = {k: _evidence_from(v) for k, v in raw["evidence"].items()}
     ledger.challenges = {k: _challenge_from(v) for k, v in raw["challenges"].items()}
+    for edge in raw.get("provenance", []):
+        ledger.provenance.edges.append(ProvenanceEdge(**edge))
     if not ledger.verify():
         raise ValueError("Ledger snapshot failed integrity verification")
     return ledger
@@ -42,7 +46,7 @@ def _claim(c: Claim) -> dict[str, Any]:
 
 
 def _evidence(e: Evidence) -> dict[str, Any]:
-    return {"id": e.id, "claim_id": e.claim_id, "title": e.title, "description": e.description, "source": e.source, "contributor_id": e.contributor_id, "supports_claim": e.supports_claim, "profile": e.profile.__dict__, "created_at": e.created_at, "metadata": e.metadata}
+    return {"id": e.id, "claim_id": e.claim_id, "title": e.title, "description": e.description, "source": e.source, "contributor_id": e.contributor_id, "supports_claim": e.supports_claim, "profile": e.profile.as_dict(), "created_at": e.created_at, "metadata": e.metadata}
 
 
 def _challenge(c: Challenge) -> dict[str, Any]:
