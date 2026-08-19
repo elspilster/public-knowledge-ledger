@@ -1,16 +1,13 @@
-"""Minimal in-memory ledger engine for PKL v0.1.
-
-Every state-changing operation is mirrored into a tamper-evident audit chain.
-The audit history can also be replayed to verify the current ledger state.
-"""
+"""Minimal in-memory ledger engine for PKL v0.1."""
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from typing import Any
 
 from .audit import AuditChain
 from .models import Assessment, Challenge, Claim, Evidence, new_id, utc_now
+from .replay import replay
 
 
 @dataclass
@@ -88,49 +85,10 @@ class Ledger:
         return self.audit.verify()
 
     def replay_state(self) -> dict[str, dict[str, Any]]:
-        """Reconstruct a minimal canonical state from the audit history."""
-        claims: dict[str, dict[str, Any]] = {}
-        evidence: dict[str, dict[str, Any]] = {}
-        challenges: dict[str, dict[str, Any]] = {}
-        for event in self.audit.events:
-            payload = event.payload
-            if event.event_type == "claim.created":
-                claims[event.object_id] = {
-                    "id": event.object_id,
-                    "text": payload["text"],
-                    "contributor_id": payload.get("contributor_id"),
-                    "status": "proposed",
-                }
-            elif event.event_type == "evidence.added":
-                evidence[event.object_id] = {
-                    "id": event.object_id,
-                    "claim_id": payload["claim_id"],
-                    "title": payload["title"],
-                    "description": payload["description"],
-                    "source": payload.get("source"),
-                    "contributor_id": payload.get("contributor_id"),
-                    "supports_claim": payload.get("supports_claim"),
-                }
-            elif event.event_type == "challenge.created":
-                challenges[event.object_id] = {
-                    "id": event.object_id,
-                    "target_id": payload["claim_id"],
-                    "description": payload["description"],
-                    "challenger_id": payload.get("challenger_id"),
-                    "counter_evidence_ids": payload.get("counter_evidence_ids", []),
-                }
-            elif event.event_type == "claim.assessed":
-                if event.object_id not in claims:
-                    raise ValueError(f"Assessment references unknown claim: {event.object_id}")
-                claims[event.object_id]["status"] = payload["status"]
-                claims[event.object_id]["evidence_level"] = payload["evidence_level"]
-                claims[event.object_id]["summary"] = payload["summary"]
-            else:
-                raise ValueError(f"Unknown audit event type: {event.event_type}")
-        return {"claims": claims, "evidence": evidence, "challenges": challenges}
+        state = replay(self.audit.events)
+        return {"claims": state.claims, "evidence": state.evidence, "challenges": state.challenges}
 
     def current_state(self) -> dict[str, dict[str, Any]]:
-        """Return the same canonical subset from the live ledger state."""
         return {
             "claims": {
                 key: {
@@ -168,7 +126,6 @@ class Ledger:
         }
 
     def verify_state(self) -> bool:
-        """Verify both audit integrity and agreement with replayed state."""
         if not self.verify_history():
             return False
         try:
@@ -177,5 +134,4 @@ class Ledger:
             return False
 
     def verify(self) -> bool:
-        """Full integrity check: history and current state."""
         return self.verify_state()
