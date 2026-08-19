@@ -21,6 +21,14 @@ Relation = Literal[
     "same_experiment",
 ]
 
+DEPENDENCY_RELATIONS = {
+    "derived_from",
+    "cites",
+    "duplicates",
+    "same_dataset",
+    "same_experiment",
+}
+
 
 @dataclass(frozen=True)
 class ProvenanceEdge:
@@ -56,19 +64,52 @@ class ProvenanceGraph:
                 return edge.relation
         return None
 
+    def _reachable_via_dependency(self, start_id: str) -> set[str]:
+        """Return nodes connected to start through dependency-like edges.
+
+        This is deliberately conservative: a provenance connection is enough
+        to flag a relationship for review, but it does not by itself prove
+        that two observations are scientifically non-independent.
+        """
+        seen = {start_id}
+        stack = [start_id]
+        while stack:
+            current = stack.pop()
+            for edge in self.edges:
+                if edge.relation not in DEPENDENCY_RELATIONS:
+                    continue
+                neighbour = None
+                if edge.source_id == current:
+                    neighbour = edge.target_id
+                elif edge.target_id == current:
+                    neighbour = edge.source_id
+                if neighbour is not None and neighbour not in seen:
+                    seen.add(neighbour)
+                    stack.append(neighbour)
+        return seen
+
+    def provenance_family(self, evidence_id: str) -> set[str]:
+        """Return the conservative dependency family containing an item."""
+        return self._reachable_via_dependency(evidence_id)
+
     def independence_hint(self, first_id: str, second_id: str) -> str:
         """Return a conservative hint; final independence requires review.
 
-        Direct duplication, citation, shared datasets, or shared experiments
-        are evidence against treating two items as independent. An explicit
-        independent_of relation is evidence in favour, but is not by itself
-        proof.
+        Direct duplication, citation, shared datasets, shared experiments, or
+        derived provenance are evidence against treating two items as
+        independent. An explicit independent_of relation is evidence in
+        favour, but is not by itself proof.
         """
         relation = self.direct_relation(first_id, second_id)
-        if relation in {"duplicates", "cites", "same_dataset", "same_experiment", "derived_from"}:
+        if relation in DEPENDENCY_RELATIONS:
             return "not_independent_or_requires_review"
         if relation == "independent_of":
             return "potentially_independent"
         if relation == "reproduces":
             return "independent_status_requires_review"
+
+        first_family = self.provenance_family(first_id)
+        second_family = self.provenance_family(second_id)
+        if first_id in second_family or second_id in first_family:
+            return "not_independent_or_requires_review"
         return "unknown"
