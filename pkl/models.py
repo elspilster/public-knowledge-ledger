@@ -73,7 +73,7 @@ class Challenge:
 
 @dataclass
 class Assessment:
-    status: Status
+    status: Status = "proposed"
     evidence_level: str = "E0"
     summary: str = ""
     assessed_at: str = field(default_factory=utc_now)
