@@ -1,7 +1,18 @@
 import pytest
 
-from pkl.auth import generate_signer
-from pkl.root_of_trust import Authority, Delegation, RootOfTrust
+from pkl.auth import generate_signer, sign_event
+from pkl.delegation import SignedDelegation
+from pkl.root_of_trust import Authority, RootOfTrust
+
+
+def make_delegation(authority, delegate, event_id="EVT-1", previous_hash="0" * 64):
+    payload = {
+        "authority_id": authority.key_id,
+        "delegate_id": delegate.key_id,
+        "delegate_public_key": delegate.public_key.hex(),
+    }
+    signature = sign_event(authority, event_id, "authority.delegated", delegate.key_id, event_id, payload, previous_hash)
+    return SignedDelegation(event_id, authority.key_id, delegate.key_id, delegate.public_key, signature, previous_hash)
 
 
 def test_root_authority_is_authorized():
@@ -12,32 +23,55 @@ def test_root_authority_is_authorized():
 
 def test_unknown_authority_cannot_delegate():
     root = generate_signer("root")
+    attacker = generate_signer("attacker")
+    delegate = generate_signer("delegate")
     trust = RootOfTrust(Authority("root", root.public_key))
+    forged = make_delegation(attacker, delegate)
     with pytest.raises(ValueError, match="Unauthorized"):
-        trust.add_delegation(Delegation("attacker", "delegate", b"bad", "EVT-1"), authorized_by="attacker")
+        trust.add_delegation(forged)
 
 
-def test_root_can_delegate():
+def test_root_can_delegate_with_valid_signature():
     root = generate_signer("root")
     delegate = generate_signer("delegate")
     trust = RootOfTrust(Authority("root", root.public_key))
-    trust.add_delegation(Delegation("root", "delegate", delegate.public_key, "EVT-1"), authorized_by="root")
+    trust.add_delegation(make_delegation(root, delegate))
     assert trust.is_authorized("delegate") is True
+
+
+def test_wrong_signature_key_is_rejected():
+    root = generate_signer("root")
+    attacker = generate_signer("attacker")
+    delegate = generate_signer("delegate")
+    trust = RootOfTrust(Authority("root", root.public_key))
+    forged = make_delegation(attacker, delegate)
+    with pytest.raises(ValueError, match="Invalid delegation signature"):
+        trust.add_delegation(SignedDelegation(forged.event_id, "root", forged.delegate_id, forged.delegate_public_key, forged.signature, forged.previous_hash))
+
+
+def test_tampered_delegate_key_is_rejected():
+    root = generate_signer("root")
+    delegate = generate_signer("delegate")
+    attacker_key = generate_signer("attacker").public_key
+    trust = RootOfTrust(Authority("root", root.public_key))
+    forged = make_delegation(root, delegate)
+    forged = SignedDelegation(forged.event_id, forged.authority_id, forged.delegate_id, attacker_key, forged.signature, forged.previous_hash)
+    with pytest.raises(ValueError, match="Invalid delegation signature"):
+        trust.add_delegation(forged)
 
 
 def test_duplicate_delegate_is_rejected():
     root = generate_signer("root")
     delegate = generate_signer("delegate")
     trust = RootOfTrust(Authority("root", root.public_key))
-    d = Delegation("root", "delegate", delegate.public_key, "EVT-1")
-    trust.add_delegation(d, authorized_by="root")
+    delegation = make_delegation(root, delegate)
+    trust.add_delegation(delegation)
     with pytest.raises(ValueError, match="already exists"):
-        trust.add_delegation(d, authorized_by="root")
+        trust.add_delegation(delegation)
 
 
-def test_fake_root_id_does_not_create_authority_without_matching_configured_root():
-    real_root = generate_signer("real-root")
-    attacker = generate_signer("root")
-    trust = RootOfTrust(Authority("real-root", real_root.public_key))
-    with pytest.raises(ValueError, match="Unauthorized"):
-        trust.add_delegation(Delegation("root", "delegate", attacker.public_key, "EVT-1"), authorized_by="root")
+def test_self_delegation_is_rejected():
+    root = generate_signer("root")
+    trust = RootOfTrust(Authority("root", root.public_key))
+    with pytest.raises(ValueError, match="Self-delegation"):
+        trust.add_delegation(make_delegation(root, root))
