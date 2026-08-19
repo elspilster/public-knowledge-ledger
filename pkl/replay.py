@@ -1,0 +1,88 @@
+"""Explicit state-transition rules for replaying PKL audit events."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any
+
+
+@dataclass
+class ReplayState:
+    claims: dict[str, dict[str, Any]] = field(default_factory=dict)
+    evidence: dict[str, dict[str, Any]] = field(default_factory=dict)
+    challenges: dict[str, dict[str, Any]] = field(default_factory=dict)
+
+
+def apply_event(state: ReplayState, event_type: str, object_id: str, payload: dict[str, Any]) -> None:
+    """Apply one event according to the canonical PKL transition rules."""
+    if event_type == "claim.created":
+        if object_id in state.claims:
+            raise ValueError(f"Claim already exists: {object_id}")
+        state.claims[object_id] = {
+            "id": object_id,
+            "text": payload["text"],
+            "contributor_id": payload.get("contributor_id"),
+            "status": "proposed",
+        }
+        return
+
+    if event_type == "evidence.added":
+        if object_id in state.evidence:
+            raise ValueError(f"Evidence already exists: {object_id}")
+        claim_id = payload["claim_id"]
+        if claim_id not in state.claims:
+            raise ValueError(f"Evidence references unknown claim: {claim_id}")
+        state.evidence[object_id] = {
+            "id": object_id,
+            "claim_id": claim_id,
+            "title": payload["title"],
+            "description": payload["description"],
+            "source": payload.get("source"),
+            "contributor_id": payload.get("contributor_id"),
+            "supports_claim": payload.get("supports_claim"),
+        }
+        return
+
+    if event_type == "challenge.created":
+        if object_id in state.challenges:
+            raise ValueError(f"Challenge already exists: {object_id}")
+        claim_id = payload["claim_id"]
+        if claim_id not in state.claims:
+            raise ValueError(f"Challenge references unknown claim: {claim_id}")
+        counter_ids = payload.get("counter_evidence_ids", [])
+        missing = [eid for eid in counter_ids if eid not in state.evidence]
+        if missing:
+            raise ValueError(f"Challenge references unknown evidence: {missing}")
+        state.challenges[object_id] = {
+            "id": object_id,
+            "target_id": claim_id,
+            "description": payload["description"],
+            "challenger_id": payload.get("challenger_id"),
+            "counter_evidence_ids": counter_ids,
+        }
+        return
+
+    if event_type == "claim.assessed":
+        if object_id not in state.claims:
+            raise ValueError(f"Assessment references unknown claim: {object_id}")
+        status = payload["status"]
+        evidence_level = payload["evidence_level"]
+        if status not in {"proposed", "supported", "disputed", "uncertain", "superseded", "rejected"}:
+            raise ValueError(f"Invalid claim status: {status}")
+        if evidence_level not in {f"E{i}" for i in range(6)}:
+            raise ValueError(f"Invalid evidence level: {evidence_level}")
+        state.claims[object_id].update({
+            "status": status,
+            "evidence_level": evidence_level,
+            "summary": payload.get("summary", ""),
+        })
+        return
+
+    raise ValueError(f"Unknown audit event type: {event_type}")
+
+
+def replay(events: list[Any]) -> ReplayState:
+    state = ReplayState()
+    for event in events:
+        apply_event(state, event.event_type, event.object_id, event.payload)
+    return state
