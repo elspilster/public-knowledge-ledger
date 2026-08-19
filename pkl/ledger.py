@@ -35,18 +35,28 @@ class Ledger:
         self.audit.append(event.id, event.event_type, event.object_id, event.timestamp, event.payload)
 
     def register_key(self, contributor_id: str, key_id: str, public_key: bytes) -> KeyRecord:
+        if not contributor_id or not key_id or not public_key:
+            raise ValueError("contributor_id, key_id and public_key are required")
         event_id = new_id("EVT")
+        timestamp = utc_now()
         record = KeyRecord(contributor_id, key_id, public_key, event_id)
         self.keys.register(record)
-        self.events.append(LedgerEvent(event_id, "key.registered", key_id, utc_now(), {"contributor_id": contributor_id, "key_id": key_id, "public_key": public_key.hex()}))
-        self.audit.append(event_id, "key.registered", key_id, self.events[-1].timestamp, self.events[-1].payload)
+        payload = {"contributor_id": contributor_id, "key_id": key_id, "public_key": public_key.hex(), "valid_from_event": event_id}
+        self.events.append(LedgerEvent(event_id, "key.registered", key_id, timestamp, payload))
+        self.audit.append(event_id, "key.registered", key_id, timestamp, payload)
         return record
 
     def revoke_key(self, key_id: str, replaced_by: str | None = None) -> KeyRecord:
         event_id = new_id("EVT")
         timestamp = utc_now()
+        if replaced_by is not None:
+            replacement = self.keys.get(replaced_by)
+            if replacement.revoked_at_event is not None:
+                raise ValueError("Replacement key is revoked")
+            if replacement.contributor_id != self.keys.get(key_id).contributor_id:
+                raise ValueError("Replacement key belongs to a different contributor")
         updated = self.keys.revoke(key_id, event_id, replaced_by)
-        payload = {"contributor_id": updated.contributor_id, "key_id": key_id, "replaced_by": replaced_by}
+        payload = {"contributor_id": updated.contributor_id, "key_id": key_id, "revoked_at_event": event_id, "replaced_by": replaced_by}
         self.events.append(LedgerEvent(event_id, "key.revoked", key_id, timestamp, payload))
         self.audit.append(event_id, "key.revoked", key_id, timestamp, payload)
         return updated
@@ -55,6 +65,8 @@ class Ledger:
         self._record(event_type, object_id, payload)
 
     def create_claim(self, text: str, contributor_id: str | None = None) -> Claim:
+        if not text or not text.strip():
+            raise ValueError("Claim text is required")
         claim = Claim(id=new_id("PKL"), text=text, contributor_id=contributor_id)
         self.claims[claim.id] = claim
         self._record_claim_event("claim.created", claim.id, {"text": text, "contributor_id": contributor_id})
@@ -63,6 +75,8 @@ class Ledger:
     def add_evidence(self, claim_id: str, title: str, description: str, *, source: str | None = None, contributor_id: str | None = None, supports_claim: bool | None = None) -> Evidence:
         if claim_id not in self.claims:
             raise KeyError(f"Unknown claim: {claim_id}")
+        if not title or not description:
+            raise ValueError("Evidence title and description are required")
         evidence = Evidence(id=new_id("EVD"), claim_id=claim_id, title=title, description=description, source=source, contributor_id=contributor_id, supports_claim=supports_claim)
         self.evidence[evidence.id] = evidence
         self.claims[claim_id].evidence_ids.append(evidence.id)
@@ -72,6 +86,8 @@ class Ledger:
     def challenge_claim(self, claim_id: str, description: str, *, challenger_id: str | None = None, counter_evidence_ids: list[str] | None = None) -> Challenge:
         if claim_id not in self.claims:
             raise KeyError(f"Unknown claim: {claim_id}")
+        if not description:
+            raise ValueError("Challenge description is required")
         counter_evidence_ids = counter_evidence_ids or []
         unknown = [eid for eid in counter_evidence_ids if eid not in self.evidence]
         if unknown:
