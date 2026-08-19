@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .audit import AuditChain
+from .key_registry import KeyRecord, KeyRegistry
 from .models import Assessment, Challenge, Claim, Evidence, new_id, utc_now
 from .replay import replay
 
@@ -26,16 +27,37 @@ class Ledger:
     challenges: dict[str, Challenge] = field(default_factory=dict)
     events: list[LedgerEvent] = field(default_factory=list)
     audit: AuditChain = field(default_factory=AuditChain)
+    keys: KeyRegistry = field(default_factory=KeyRegistry)
 
     def _record(self, event_type: str, object_id: str, payload: dict[str, Any]) -> None:
         event = LedgerEvent(id=new_id("EVT"), event_type=event_type, object_id=object_id, timestamp=utc_now(), payload=payload)
         self.events.append(event)
         self.audit.append(event.id, event.event_type, event.object_id, event.timestamp, event.payload)
 
+    def register_key(self, contributor_id: str, key_id: str, public_key: bytes) -> KeyRecord:
+        event_id = new_id("EVT")
+        record = KeyRecord(contributor_id, key_id, public_key, event_id)
+        self.keys.register(record)
+        self.events.append(LedgerEvent(event_id, "key.registered", key_id, utc_now(), {"contributor_id": contributor_id, "key_id": key_id, "public_key": public_key.hex()}))
+        self.audit.append(event_id, "key.registered", key_id, self.events[-1].timestamp, self.events[-1].payload)
+        return record
+
+    def revoke_key(self, key_id: str, replaced_by: str | None = None) -> KeyRecord:
+        event_id = new_id("EVT")
+        timestamp = utc_now()
+        updated = self.keys.revoke(key_id, event_id, replaced_by)
+        payload = {"contributor_id": updated.contributor_id, "key_id": key_id, "replaced_by": replaced_by}
+        self.events.append(LedgerEvent(event_id, "key.revoked", key_id, timestamp, payload))
+        self.audit.append(event_id, "key.revoked", key_id, timestamp, payload)
+        return updated
+
+    def _record_claim_event(self, event_type: str, object_id: str, payload: dict[str, Any]) -> None:
+        self._record(event_type, object_id, payload)
+
     def create_claim(self, text: str, contributor_id: str | None = None) -> Claim:
         claim = Claim(id=new_id("PKL"), text=text, contributor_id=contributor_id)
         self.claims[claim.id] = claim
-        self._record("claim.created", claim.id, {"text": text, "contributor_id": contributor_id})
+        self._record_claim_event("claim.created", claim.id, {"text": text, "contributor_id": contributor_id})
         return claim
 
     def add_evidence(self, claim_id: str, title: str, description: str, *, source: str | None = None, contributor_id: str | None = None, supports_claim: bool | None = None) -> Evidence:
@@ -91,36 +113,15 @@ class Ledger:
     def current_state(self) -> dict[str, dict[str, Any]]:
         return {
             "claims": {
-                key: {
-                    "id": claim.id,
-                    "text": claim.text,
-                    "contributor_id": claim.contributor_id,
-                    "status": claim.status,
-                    "evidence_level": claim.assessment.evidence_level,
-                    "summary": claim.assessment.summary,
-                }
+                key: {"id": claim.id, "text": claim.text, "contributor_id": claim.contributor_id, "status": claim.status, "evidence_level": claim.assessment.evidence_level, "summary": claim.assessment.summary}
                 for key, claim in self.claims.items()
             },
             "evidence": {
-                key: {
-                    "id": item.id,
-                    "claim_id": item.claim_id,
-                    "title": item.title,
-                    "description": item.description,
-                    "source": item.source,
-                    "contributor_id": item.contributor_id,
-                    "supports_claim": item.supports_claim,
-                }
+                key: {"id": item.id, "claim_id": item.claim_id, "title": item.title, "description": item.description, "source": item.source, "contributor_id": item.contributor_id, "supports_claim": item.supports_claim}
                 for key, item in self.evidence.items()
             },
             "challenges": {
-                key: {
-                    "id": item.id,
-                    "target_id": item.target_id,
-                    "description": item.description,
-                    "challenger_id": item.challenger_id,
-                    "counter_evidence_ids": item.counter_evidence_ids,
-                }
+                key: {"id": item.id, "target_id": item.target_id, "description": item.description, "challenger_id": item.challenger_id, "counter_evidence_ids": item.counter_evidence_ids}
                 for key, item in self.challenges.items()
             },
         }
