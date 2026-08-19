@@ -142,8 +142,20 @@ class Ledger:
             },
         }
 
+    def _events_match_audit(self) -> bool:
+        if len(self.events) != len(self.audit.events):
+            return False
+        return all(
+            live.id == audit.event_id
+            and live.event_type == audit.event_type
+            and live.object_id == audit.object_id
+            and live.timestamp == audit.timestamp
+            and live.payload == audit.payload
+            for live, audit in zip(self.events, self.audit.events)
+        )
+
     def verify_state(self) -> bool:
-        if not self.verify_history():
+        if not self.verify_history() or not self._events_match_audit():
             return False
         try:
             return self.replay_state() == self.current_state()
