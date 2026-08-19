@@ -17,9 +17,17 @@ def test_three_of_four_cannot_capture_council():
 
 
 def test_four_signers_from_two_categories_cannot_capture():
-    seats = [Seat("a", "science"), Seat("b", "science"), Seat("c", "civil"), Seat("d", "civil")]
+    seats = [
+        Seat("a", "science"),
+        Seat("b", "science"),
+        Seat("c", "civil"),
+        Seat("d", "civil"),
+        Seat("e", "public"),
+    ]
     with pytest.raises(ValueError, match="Quorum"):
-        RootCouncil(QuorumPolicy(seats, threshold=4, min_categories=3)).decide("claim", "accepted", {"a", "b", "c", "d"}, "category capture")
+        RootCouncil(QuorumPolicy(seats, threshold=4, min_categories=3)).decide(
+            "claim", "accepted", {"a", "b", "c", "d"}, "category capture"
+        )
 
 
 def test_unknown_signer_cannot_satisfy_quorum():
