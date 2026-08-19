@@ -21,14 +21,14 @@ class KeyRegistry:
 
     def register(self, record: KeyRecord) -> None:
         versions = self._keys.get(record.key_id, [])
+        if any(r.revoked_at_event is None for r in versions):
+            raise ValueError(f"Key already registered: {record.key_id}")
         active_contributor = [
             r for records in self._keys.values() for r in records
             if r.contributor_id == record.contributor_id and r.revoked_at_event is None
         ]
         if active_contributor:
             raise ValueError(f"Contributor already has an active key: {record.contributor_id}")
-        if any(r.revoked_at_event is None for r in versions):
-            raise ValueError(f"Key already registered: {record.key_id}")
         self._keys.setdefault(record.key_id, []).append(record)
 
     def revoke(self, key_id: str, revoked_at_event: str, replaced_by: str | None = None) -> KeyRecord:
