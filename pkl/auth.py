@@ -7,6 +7,7 @@ that the event's claim is true.
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 
 from .audit import _canonical_event_data
@@ -22,19 +23,32 @@ except ImportError:  # pragma: no cover
 
 @dataclass(frozen=True)
 class Signer:
+    """A cryptographic credential; key_id is unique to this key version."""
+
     key_id: str
     private_key: bytes
     public_key: bytes
 
 
-def generate_signer(key_id: str) -> Signer:
+def generate_signer(contributor_id: str) -> Signer:
+    """Generate a key version for a contributor.
+
+    The contributor ID is not itself the cryptographic key ID. Each generated
+    key receives a stable, unique identifier derived from its public key, so a
+    contributor can rotate credentials without collapsing multiple key
+    versions into one registry slot.
+    """
+    if not contributor_id:
+        raise ValueError("contributor_id is required")
     if Ed25519PrivateKey is None:
         raise RuntimeError("cryptography is required for signed events")
     private = Ed25519PrivateKey.generate()
+    public_key = private.public_key().public_bytes_raw()
+    key_id = f"{contributor_id}:{hashlib.sha256(public_key).hexdigest()[:16]}"
     return Signer(
         key_id=key_id,
         private_key=private.private_bytes_raw(),
-        public_key=private.public_key().public_bytes_raw(),
+        public_key=public_key,
     )
 
 
