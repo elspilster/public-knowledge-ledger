@@ -1,6 +1,7 @@
 import pytest
 
 from pkl import EvidenceProfile, Ledger
+from pkl.serialization import export_ledger, import_ledger
 
 
 def test_evidence_profile_keeps_dimensions_separate():
@@ -63,3 +64,19 @@ def test_provenance_prevents_counting_derived_reporting_as_independent():
     assert ledger.evidence_independence(independent.id, original.id) == "unknown"
     assert ledger.provenance.provenance_family(report_b.id) == {report_b.id, report_a.id, original.id}
     assert ledger.verify()
+
+
+def test_profile_and_provenance_survive_snapshot_round_trip():
+    ledger = Ledger()
+    claim = ledger.create_claim("Snapshot test")
+    first = ledger.add_evidence(claim.id, "Primary", "Primary evidence")
+    second = ledger.add_evidence(claim.id, "Derivative", "Derivative evidence")
+    ledger.update_evidence_profile(second.id, EvidenceProfile(methodology_quality=4, independence_level="I1"))
+    ledger.link_evidence(second.id, first.id, "derived_from", "Cites the primary source")
+
+    restored = import_ledger(export_ledger(ledger))
+
+    assert restored.evidence[second.id].profile.independence_level == "I1"
+    assert restored.provenance.edges[0].relation == "derived_from"
+    assert restored.evidence_independence(second.id, first.id) == "not_independent_or_requires_review"
+    assert restored.verify()
