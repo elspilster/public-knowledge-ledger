@@ -40,7 +40,14 @@ def apply_event(state: ReplayState, event_type: str, object_id: str, payload: di
     if event_type == "claim.created":
         if object_id in state.claims:
             raise ValueError(f"Claim already exists: {object_id}")
-        state.claims[object_id] = {"id": object_id, "text": payload["text"], "contributor_id": payload.get("contributor_id"), "status": "proposed"}
+        state.claims[object_id] = {
+            "id": object_id,
+            "text": payload["text"],
+            "contributor_id": payload.get("contributor_id"),
+            "status": "proposed",
+            "evidence_level": "E0",
+            "summary": "",
+        }
         return
 
     if event_type == "evidence.added":
