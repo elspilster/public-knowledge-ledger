@@ -169,3 +169,40 @@ def test_no_evidence_is_explicitly_insufficient():
     assert assessed.evidence_level == "E0"
     assert "No evidence" in assessed.summary
     assert ledger.history(claim.id)[-1].event_type == "claim.assessed"
+
+
+def test_quality_asymmetry_is_explicitly_exposed():
+    """Two weak supporting families versus one strong contradiction."""
+    ledger = Ledger()
+    claim = ledger.create_claim("A claim with asymmetric evidence quality")
+
+    weak_profile = EvidenceProfile(
+        methodology_quality=0,
+        source_quality=0,
+        sample_data_strength=0,
+        bias_risk=5,
+        transparency=0,
+        relevance=0,
+    )
+    strong_profile = EvidenceProfile(
+        methodology_quality=5,
+        source_quality=5,
+        sample_data_strength=5,
+        bias_risk=0,
+        transparency=5,
+        relevance=5,
+    )
+
+    ledger.add_evidence(claim.id, "Weak A", "Very weak supporting study", supports_claim=True, profile=weak_profile)
+    ledger.add_evidence(claim.id, "Weak B", "Another very weak supporting study", supports_claim=True, profile=weak_profile)
+    ledger.add_evidence(claim.id, "Strong C", "Exceptionally strong contradictory study", supports_claim=False, profile=strong_profile)
+
+    result = ledger.assess_claim_from_evidence(claim.id)
+
+    # Characterisation test: the current engine is expected to reveal that
+    # family count, rather than Evidence Profile quality, drives the result.
+    assert result.status == "supported"
+    assert result.evidence_level == "E3"
+    assert result.supporting_evidence_ids
+    assert result.contradicting_evidence_ids
+    assert "quality" not in result.summary.lower()
