@@ -12,7 +12,7 @@ def test_assessment_counts_recorded_provenance_families_not_reports():
     result = ledger.assess_claim_from_evidence(claim.id)
 
     assert result.status == "supported"
-    assert result.evidence_level == "E2"
+    assert result.evidence_level == "E3"
     assert len(result.supporting_evidence_ids) == 3
     assert "provenance families" in result.summary
 
