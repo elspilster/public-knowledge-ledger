@@ -53,10 +53,6 @@ def assess_claim(
     limitations: list[str] = []
     provenance_notes: list[str] = []
 
-    # Known correlations are load-bearing: evidence items sharing a declared
-    # correlation/COI tag cannot create additional independent support in this
-    # engine. Unknown dependencies remain unknown rather than being treated as
-    # evidence of dependence.
     if support_correlations:
         limitations.append(
             "Supporting evidence sharing declared correlation/COI tags was counted as one recorded evidence family."
@@ -75,9 +71,6 @@ def assess_claim(
     elif supporting and contradicting:
         status = "disputed"
     else:
-        # A single supporting item is evidence, but this engine does not call
-        # it "supported". That distinction prevents a single item from being
-        # mistaken for corroborated support.
         status = "uncertain"
 
     for item in items:
@@ -91,7 +84,11 @@ def assess_claim(
         if metadata.get("unknown_dependencies"):
             limitations.append(f"{item.id}: external dependencies remain unknown.")
 
-    if not contradicting:
+    if supporting and contradicting:
+        limitations.append(
+            "Supporting and contradicting evidence are both recorded; this assessment does not resolve the underlying disagreement."
+        )
+    elif not contradicting:
         limitations.append("No contradiction is recorded; absence of a recorded contradiction is not proof that none exists.")
 
     level = _evidence_level(support_strength, contradiction_strength, len(items), limitations)
@@ -123,12 +120,7 @@ def _correlation_keys(item: Evidence) -> set[str]:
 def _family_count_with_correlations(
     items: list[Evidence], provenance: ProvenanceGraph
 ) -> tuple[int, set[str]]:
-    """Count connected provenance families, merging explicit shared-risk tags.
-
-    The merge is transitive and order-independent: if A shares a provenance
-    family with B and B shares a declared correlation with C, all three are
-    treated as one family for this engine.
-    """
+    """Count connected provenance families, merging explicit shared-risk tags."""
     groups: list[set[str]] = []
     group_keys: list[set[str]] = []
     correlations: set[str] = set()
