@@ -85,25 +85,20 @@ class Ledger:
         claim = self.claims[claim_id]
         previous_text = claim.text
         claim.text = corrected_text
-        self._record("claim.corrected", claim_id, {
-            "previous_text": previous_text,
-            "corrected_text": corrected_text,
-            "reason": reason,
-            "contributor_id": contributor_id,
-        })
+        self._record("claim.corrected", claim_id, {"previous_text": previous_text, "corrected_text": corrected_text, "reason": reason, "contributor_id": contributor_id})
         return claim
 
-    def add_evidence(self, claim_id: str, title: str, description: str, *, source: str | None = None, contributor_id: str | None = None, supports_claim: bool | None = None, profile: EvidenceProfile | None = None) -> Evidence:
+    def add_evidence(self, claim_id: str, title: str, description: str, *, source: str | None = None, contributor_id: str | None = None, supports_claim: bool | None = None, profile: EvidenceProfile | None = None, metadata: dict[str, Any] | None = None) -> Evidence:
         if claim_id not in self.claims:
             raise KeyError(f"Unknown claim: {claim_id}")
         if not title or not description:
             raise ValueError("Evidence title and description are required")
         profile = profile or EvidenceProfile()
         profile.validate()
-        evidence = Evidence(id=new_id("EVD"), claim_id=claim_id, title=title, description=description, source=source, contributor_id=contributor_id, supports_claim=supports_claim, profile=profile)
+        evidence = Evidence(id=new_id("EVD"), claim_id=claim_id, title=title, description=description, source=source, contributor_id=contributor_id, supports_claim=supports_claim, profile=profile, metadata=dict(metadata or {}))
         self.evidence[evidence.id] = evidence
         self.claims[claim_id].evidence_ids.append(evidence.id)
-        self._record("evidence.added", evidence.id, {"claim_id": claim_id, "title": title, "description": description, "source": source, "contributor_id": contributor_id, "supports_claim": supports_claim, "profile": profile.as_dict()})
+        self._record("evidence.added", evidence.id, {"claim_id": claim_id, "title": title, "description": description, "source": source, "contributor_id": contributor_id, "supports_claim": supports_claim, "profile": profile.as_dict(), "metadata": evidence.metadata})
         return evidence
 
     def update_evidence_profile(self, evidence_id: str, profile: EvidenceProfile) -> Evidence:
@@ -202,11 +197,8 @@ class Ledger:
 
     def current_state(self) -> dict[str, Any]:
         return {
-            "claims": {
-                key: {"id": claim.id, "text": claim.text, "contributor_id": claim.contributor_id, "status": claim.status, "evidence_level": claim.assessment.evidence_level, "summary": claim.assessment.summary, "assessment_history": claim.assessment_history, "assessment_review_ids": claim.assessment_review_ids}
-                for key, claim in self.claims.items()
-            },
-            "evidence": {key: {"id": item.id, "claim_id": item.claim_id, "title": item.title, "description": item.description, "source": item.source, "contributor_id": item.contributor_id, "supports_claim": item.supports_claim, "profile": item.profile.as_dict()} for key, item in self.evidence.items()},
+            "claims": {key: {"id": claim.id, "text": claim.text, "contributor_id": claim.contributor_id, "status": claim.status, "evidence_level": claim.assessment.evidence_level, "summary": claim.assessment.summary, "assessment_history": claim.assessment_history, "assessment_review_ids": claim.assessment_review_ids} for key, claim in self.claims.items()},
+            "evidence": {key: {"id": item.id, "claim_id": item.claim_id, "title": item.title, "description": item.description, "source": item.source, "contributor_id": item.contributor_id, "supports_claim": item.supports_claim, "profile": item.profile.as_dict(), "metadata": item.metadata} for key, item in self.evidence.items()},
             "challenges": {key: {"id": item.id, "target_id": item.target_id, "description": item.description, "challenger_id": item.challenger_id, "counter_evidence_ids": item.counter_evidence_ids, "status": item.status, "resolution": item.resolution} for key, item in self.challenges.items()},
             "assessment_reviews": {key: {"id": item.id, "claim_id": item.claim_id, "reviewer_id": item.reviewer_id, "status": item.status, "rationale": item.rationale, "created_at": item.created_at} for key, item in self.assessment_reviews.items()},
             "provenance": [edge.__dict__.copy() for edge in self.provenance.edges],
