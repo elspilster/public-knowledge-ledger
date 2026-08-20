@@ -1,13 +1,12 @@
-"""Minimal in-memory ledger engine for PKL v0.1."""
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any
 
+from .assessment import assess_claim
 from .audit import AuditChain
 from .key_registry import KeyRecord, KeyRegistry
-from .models import Assessment, Challenge, Claim, Evidence, EvidenceProfile, new_id, utc_now
+from .models import Assessment, AssessmentReview, Challenge, Claim, Evidence, EvidenceProfile, new_id, utc_now
 from .provenance import ProvenanceGraph, Relation
 from .replay import replay
 
@@ -26,15 +25,18 @@ class Ledger:
     claims: dict[str, Claim] = field(default_factory=dict)
     evidence: dict[str, Evidence] = field(default_factory=dict)
     challenges: dict[str, Challenge] = field(default_factory=dict)
+    assessment_reviews: dict[str, AssessmentReview] = field(default_factory=dict)
     provenance: ProvenanceGraph = field(default_factory=ProvenanceGraph)
     events: list[LedgerEvent] = field(default_factory=list)
     audit: AuditChain = field(default_factory=AuditChain)
     keys: KeyRegistry = field(default_factory=KeyRegistry)
 
     def _record(self, event_type: str, object_id: str, payload: dict[str, Any]) -> None:
-        event = LedgerEvent(id=new_id("EVT"), event_type=event_type, object_id=object_id, timestamp=utc_now(), payload=payload)
+        event_id = new_id("EVT")
+        timestamp = utc_now()
+        event = LedgerEvent(event_id, event_type, object_id, timestamp, payload)
         self.events.append(event)
-        self.audit.append(event.id, event.event_type, event.object_id, event.timestamp, event.payload)
+        self.audit.append(event_id, event_type, object_id, timestamp, payload)
 
     def register_key(self, contributor_id: str, key_id: str, public_key: bytes) -> KeyRecord:
         if not contributor_id or not key_id or not public_key:
@@ -74,16 +76,66 @@ class Ledger:
         self._record_claim_event("claim.created", claim.id, {"text": text, "contributor_id": contributor_id})
         return claim
 
+    def correct_claim(self, claim_id: str, new_text: str, *, reason: str, contributor_id: str | None = None) -> Claim:
+        """Correct a claim by appending a new event; never rewrite prior history."""
+        if claim_id not in self.claims:
+            raise KeyError(f"Unknown claim: {claim_id}")
+        if not new_text or not new_text.strip():
+            raise ValueError("Corrected claim text is required")
+        if not reason or not reason.strip():
+            raise ValueError("Correction reason is required")
+        claim = self.claims[claim_id]
+        old_text = claim.text
+        claim.text = new_text
+        self._record(
+            "claim.corrected",
+            claim_id,
+            {
+                "old_text": old_text,
+                "new_text": new_text,
+                "reason": reason,
+                "contributor_id": contributor_id,
+            },
+        )
+        return claim
+
+    def _claim_relationship_reaches(self, start_id: str, target_id: str) -> bool:
+        pending = [start_id]
+        visited: set[str] = set()
+        while pending:
+            current = pending.pop()
+            if current in visited:
+                continue
+            if current == target_id:
+                return True
+            visited.add(current)
+            pending.extend(self.claims[current].related_claim_ids)
+        return False
+
+    def relate_claims(self, first_id: str, second_id: str, relation: str) -> None:
+        if first_id not in self.claims or second_id not in self.claims:
+            raise KeyError("Claim relationships must reference known claims")
+        if first_id == second_id:
+            raise ValueError("A claim cannot be related to itself")
+        if relation not in {"semantically_related", "duplicate_of", "narrower_than", "broader_than"}:
+            raise ValueError(f"Invalid claim relationship: {relation}")
+        if second_id in self.claims[first_id].related_claim_ids:
+            raise ValueError("This claim relationship already exists")
+        if self._claim_relationship_reaches(second_id, first_id):
+            raise ValueError("Claim relationships cannot create cycles")
+        self.claims[first_id].related_claim_ids.append(second_id)
+        self._record("claim.related", first_id, {"first_id": first_id, "second_id": second_id, "relation": relation})
+
     def add_evidence(
         self,
         claim_id: str,
         title: str,
         description: str,
-        *,
         source: str | None = None,
         contributor_id: str | None = None,
         supports_claim: bool | None = None,
         profile: EvidenceProfile | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> Evidence:
         if claim_id not in self.claims:
             raise KeyError(f"Unknown claim: {claim_id}")
@@ -100,6 +152,7 @@ class Ledger:
             contributor_id=contributor_id,
             supports_claim=supports_claim,
             profile=profile,
+            metadata=metadata or {},
         )
         self.evidence[evidence.id] = evidence
         self.claims[claim_id].evidence_ids.append(evidence.id)
@@ -114,6 +167,7 @@ class Ledger:
                 "contributor_id": contributor_id,
                 "supports_claim": supports_claim,
                 "profile": profile.as_dict(),
+                "metadata": evidence.metadata,
             },
         )
         return evidence
@@ -131,21 +185,20 @@ class Ledger:
         if source_id not in self.evidence or target_id not in self.evidence:
             raise KeyError("Provenance links must reference known evidence")
         edge = self.provenance.add(source_id, target_id, relation, note)
-        self._record(
-            "evidence.provenance_linked",
-            source_id,
-            {"source_id": edge.source_id, "target_id": edge.target_id, "relation": edge.relation, "note": edge.note},
-        )
+        self._record("evidence.provenance_linked", source_id, {"source_id": edge.source_id, "target_id": edge.target_id, "relation": edge.relation, "note": edge.note})
 
     def evidence_independence(self, first_id: str, second_id: str) -> str:
         if first_id not in self.evidence or second_id not in self.evidence:
             raise KeyError("Independence checks must reference known evidence")
         return self.provenance.independence_hint(first_id, second_id)
 
+    def add_provenance_edge(self, source_id: str, target_id: str, relation: str = "derived_from") -> None:
+        self.link_evidence(source_id, target_id, relation)  # type: ignore[arg-type]
+
     def challenge_claim(self, claim_id: str, description: str, *, challenger_id: str | None = None, counter_evidence_ids: list[str] | None = None) -> Challenge:
         if claim_id not in self.claims:
             raise KeyError(f"Unknown claim: {claim_id}")
-        if not description:
+        if not description.strip():
             raise ValueError("Challenge description is required")
         counter_evidence_ids = counter_evidence_ids or []
         unknown = [eid for eid in counter_evidence_ids if eid not in self.evidence]
@@ -157,18 +210,80 @@ class Ledger:
         self._record("challenge.created", challenge.id, {"claim_id": claim_id, "description": description, "challenger_id": challenger_id, "counter_evidence_ids": counter_evidence_ids})
         return challenge
 
-    def assess_claim(self, claim_id: str, status: str, *, evidence_level: str = "E0", summary: str = "") -> Claim:
+    def resolve_challenge(self, challenge_id: str, resolution: str) -> Challenge:
+        if challenge_id not in self.challenges:
+            raise KeyError(f"Unknown challenge: {challenge_id}")
+        if not resolution or not resolution.strip():
+            raise ValueError("Resolution is required")
+        challenge = self.challenges[challenge_id]
+        if challenge.status == "resolved":
+            raise ValueError("Challenge is already resolved")
+        challenge.status = "resolved"
+        challenge.resolution = resolution
+        self._record("challenge.resolved", challenge_id, {"resolution": resolution})
+        return challenge
+
+    def assess_claim(
+        self,
+        claim_id: str,
+        status: str,
+        *,
+        evidence_level: str = "E0",
+        summary: str = "",
+        supporting_evidence_ids: list[str] | None = None,
+        contradicting_evidence_ids: list[str] | None = None,
+        limitations: list[str] | None = None,
+    ) -> Claim:
         if claim_id not in self.claims:
             raise KeyError(f"Unknown claim: {claim_id}")
-        if status not in {"proposed", "supported", "disputed", "uncertain", "superseded", "rejected"}:
+        if status not in {"proposed", "supported", "disputed", "uncertain", "superseded", "rejected", "insufficient_evidence"}:
             raise ValueError(f"Invalid claim status: {status}")
         if evidence_level not in {f"E{i}" for i in range(6)}:
             raise ValueError(f"Invalid evidence level: {evidence_level}")
         claim = self.claims[claim_id]
+        assessment = Assessment(
+            status=status,
+            evidence_level=evidence_level,
+            summary=summary,
+            supporting_evidence_ids=supporting_evidence_ids or [],
+            contradicting_evidence_ids=contradicting_evidence_ids or [],
+            limitations=limitations or [],
+        )
         claim.status = status  # type: ignore[assignment]
-        claim.assessment = Assessment(status=status, evidence_level=evidence_level, summary=summary)  # type: ignore[arg-type]
-        self._record("claim.assessed", claim_id, {"status": status, "evidence_level": evidence_level, "summary": summary})
+        claim.assessment = assessment
+        claim.assessment_history.append(assessment)
+        self._record("claim.assessed", claim_id, {"status": status, "evidence_level": evidence_level, "summary": summary, "supporting_evidence_ids": claim.assessment.supporting_evidence_ids, "contradicting_evidence_ids": claim.assessment.contradicting_evidence_ids, "limitations": claim.assessment.limitations, "assessed_at": assessment.assessed_at})
         return claim
+
+    def record_assessment_review(self, claim_id: str, reviewer_id: str, position: str, rationale: str) -> AssessmentReview:
+        if claim_id not in self.claims:
+            raise KeyError(f"Unknown claim: {claim_id}")
+        if not reviewer_id or not reviewer_id.strip():
+            raise ValueError("Reviewer ID is required")
+        if not rationale or not rationale.strip():
+            raise ValueError("Review rationale is required")
+        if position not in {"proposed", "supported", "disputed", "uncertain", "superseded", "rejected", "insufficient_evidence"}:
+            raise ValueError(f"Invalid review position: {position}")
+        review = AssessmentReview(new_id("REV"), claim_id, reviewer_id, position, rationale)
+        self.assessment_reviews[review.id] = review
+        self.claims[claim_id].assessment_review_ids.append(review.id)
+        self._record("assessment.reviewed", review.id, {"claim_id": claim_id, "reviewer_id": reviewer_id, "position": position, "rationale": rationale, "created_at": review.created_at})
+        return review
+
+    def assess_claim_from_evidence(self, claim_id: str) -> Assessment:
+        if claim_id not in self.claims:
+            raise KeyError(f"Unknown claim: {claim_id}")
+        result = assess_claim(self.claims[claim_id], self.evidence, self.provenance)
+        self.assess_claim(
+            claim_id,
+            result.status,
+            evidence_level=result.evidence_level,
+            summary=result.summary,
+            supporting_evidence_ids=list(result.supporting_ids),
+            contradicting_evidence_ids=list(result.contradicting_ids),
+            limitations=list(result.limitations) + list(result.provenance_notes),
+        )
+        return self.claims[claim_id].assessment
 
     def get_claim(self, claim_id: str) -> Claim:
         return self.claims[claim_id]
@@ -183,21 +298,25 @@ class Ledger:
 
     def replay_state(self) -> dict[str, Any]:
         state = replay(self.audit.events)
-        return {"claims": state.claims, "evidence": state.evidence, "challenges": state.challenges, "provenance": state.provenance}
+        return {"claims": state.claims, "evidence": state.evidence, "challenges": state.challenges, "assessment_reviews": state.assessment_reviews, "provenance": state.provenance}
 
     def current_state(self) -> dict[str, Any]:
         return {
             "claims": {
-                key: {"id": claim.id, "text": claim.text, "contributor_id": claim.contributor_id, "status": claim.status, "evidence_level": claim.assessment.evidence_level, "summary": claim.assessment.summary}
+                key: {"id": claim.id, "text": claim.text, "contributor_id": claim.contributor_id, "status": claim.status, "evidence_level": claim.assessment.evidence_level, "summary": claim.assessment.summary, "assessment_history": [assessment.__dict__.copy() for assessment in claim.assessment_history], "assessment_review_ids": list(claim.assessment_review_ids)}
                 for key, claim in self.claims.items()
             },
             "evidence": {
-                key: {"id": item.id, "claim_id": item.claim_id, "title": item.title, "description": item.description, "source": item.source, "contributor_id": item.contributor_id, "supports_claim": item.supports_claim, "profile": item.profile.as_dict()}
+                key: {"id": item.id, "claim_id": item.claim_id, "title": item.title, "description": item.description, "source": item.source, "contributor_id": item.contributor_id, "supports_claim": item.supports_claim, "profile": item.profile.as_dict(), "metadata": item.metadata}
                 for key, item in self.evidence.items()
             },
             "challenges": {
-                key: {"id": item.id, "target_id": item.target_id, "description": item.description, "challenger_id": item.challenger_id, "counter_evidence_ids": item.counter_evidence_ids}
+                key: {"id": item.id, "target_id": item.target_id, "description": item.description, "challenger_id": item.challenger_id, "counter_evidence_ids": item.counter_evidence_ids, "status": item.status, "resolution": item.resolution}
                 for key, item in self.challenges.items()
+            },
+            "assessment_reviews": {
+                key: {"id": item.id, "claim_id": item.claim_id, "reviewer_id": item.reviewer_id, "position": item.position, "rationale": item.rationale, "created_at": item.created_at}
+                for key, item in self.assessment_reviews.items()
             },
             "provenance": [edge.__dict__.copy() for edge in self.provenance.edges],
         }
