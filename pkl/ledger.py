@@ -107,7 +107,7 @@ class Ledger:
         claim_id: str,
         title: str,
         description: str,
-        source: str,
+        source: str | None = None,
         contributor_id: str | None = None,
         supports_claim: bool | None = None,
         profile: EvidenceProfile | None = None,
