@@ -4,7 +4,7 @@ from pkl.delegation import SignedDelegation, verify_delegation
 
 def make_delegation(authority, delegate, event_id="EVT-1", previous_hash="0" * 64):
     payload = {"authority_id": authority.key_id, "delegate_id": delegate.key_id, "delegate_public_key": delegate.public_key.hex()}
-    signature = sign_event(authority, event_id, "authority.delegated", delegate.key_id, event_id, payload, previous_hash)
+    signature = sign_event(authority, event_id, "authority.delegated", delegate.key_id, event_id, payload, previous_hash, signer_key_id=authority.key_id)
     return SignedDelegation(event_id, authority.key_id, delegate.key_id, delegate.public_key, signature, previous_hash)
 
 

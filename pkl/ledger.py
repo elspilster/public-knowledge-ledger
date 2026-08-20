@@ -191,6 +191,10 @@ class Ledger:
     def verify_history(self) -> bool:
         return self.audit.verify()
 
+    def verify_authentication(self, *, require_signatures: bool = True) -> bool:
+        """Verify audit signatures against the ledger's registered public keys."""
+        return self.audit.verify_signatures(self.keys.public_keys(), require_signatures=require_signatures)
+
     def replay_state(self) -> dict[str, Any]:
         state = replay(self.audit.events)
         return {"claims": state.claims, "evidence": state.evidence, "challenges": state.challenges, "assessment_reviews": state.assessment_reviews, "provenance": state.provenance}

@@ -26,6 +26,7 @@ def delegation_bytes(d: SignedDelegation) -> bytes:
         d.event_id,
         {"authority_id": d.authority_id, "delegate_id": d.delegate_id, "delegate_public_key": d.delegate_public_key.hex()},
         d.previous_hash,
+        d.authority_id,
     )
 
 
@@ -39,4 +40,5 @@ def verify_delegation(d: SignedDelegation, authority_public_key: bytes) -> bool:
         d.event_id,
         {"authority_id": d.authority_id, "delegate_id": d.delegate_id, "delegate_public_key": d.delegate_public_key.hex()},
         d.previous_hash,
+        d.authority_id,
     )
