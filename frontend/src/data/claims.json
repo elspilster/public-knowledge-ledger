@@ -1,0 +1,35 @@
+[
+  {
+    "id": "PKL-BIO-001",
+    "title": "Complementary base pairing in DNA",
+    "statement": "In double-stranded DNA, nucleotide bases pair through specific complementary interactions.",
+    "category": "Molecular Biology",
+    "claimType": "mechanism",
+    "status": "established",
+    "evidence": ["Structural biology", "Chemical measurement", "Replicated observation"],
+    "limitations": ["Non-canonical DNA structures exist", "Modified bases require separate claims"],
+    "relationships": ["DNA replication fidelity", "Genetic information storage"]
+  },
+  {
+    "id": "PKL-NEURO-008",
+    "title": "Acute sleep deprivation impairs working memory",
+    "statement": "Continuous sleep loss produces measurable reductions in attention and working memory performance.",
+    "category": "Neuroscience",
+    "claimType": "causal",
+    "status": "reviewed",
+    "evidence": ["Controlled deprivation studies", "Cognitive performance testing"],
+    "limitations": ["Individual resilience varies", "Long-term effects require separate study"],
+    "relationships": ["Chronic sleep disruption", "Cognitive health"]
+  },
+  {
+    "id": "PKL-COG-010",
+    "title": "Quantum processes are required for consciousness",
+    "statement": "Some theories propose that quantum processes in neural structures are necessary for conscious experience.",
+    "category": "Cognitive Science",
+    "claimType": "uncertain",
+    "status": "uncertain",
+    "evidence": ["Quantum biology research", "Theoretical models"],
+    "limitations": ["Mechanism remains unconfirmed", "Alternative explanations exist"],
+    "relationships": ["Neural computation theories", "Consciousness models"]
+  }
+]
