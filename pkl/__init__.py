@@ -6,6 +6,7 @@ from .assessment import AssessmentResult, assess_claim
 from .quorum import QuorumPolicy, Seat
 from .council import CouncilDecision, RootCouncil
 from .query import KnowledgeQuery
+from .ingestion import SourceRecord, ingest_source, source_sha256
 
 __all__ = [
     "Assessment",
@@ -21,4 +22,7 @@ __all__ = [
     "CouncilDecision",
     "RootCouncil",
     "KnowledgeQuery",
+    "SourceRecord",
+    "ingest_source",
+    "source_sha256",
 ]
