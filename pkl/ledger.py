@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from .assessment import assess_claim
 from .audit import AuditChain
 from .key_registry import KeyRecord, KeyRegistry
 from .models import Assessment, Challenge, Claim, Evidence, EvidenceProfile, new_id, utc_now
@@ -74,6 +75,17 @@ class Ledger:
         self._record_claim_event("claim.created", claim.id, {"text": text, "contributor_id": contributor_id})
         return claim
 
+    def relate_claims(self, first_id: str, second_id: str, relation: str) -> None:
+        if first_id not in self.claims or second_id not in self.claims:
+            raise KeyError("Claim relationships must reference known claims")
+        if first_id == second_id:
+            raise ValueError("A claim cannot be related to itself")
+        if relation not in {"semantically_related", "duplicate_of", "narrower_than", "broader_than"}:
+            raise ValueError(f"Invalid claim relationship: {relation}")
+        if second_id not in self.claims[first_id].related_claim_ids:
+            self.claims[first_id].related_claim_ids.append(second_id)
+        self._record("claim.related", first_id, {"first_id": first_id, "second_id": second_id, "relation": relation})
+
     def add_evidence(
         self,
         claim_id: str,
@@ -84,6 +96,7 @@ class Ledger:
         contributor_id: str | None = None,
         supports_claim: bool | None = None,
         profile: EvidenceProfile | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> Evidence:
         if claim_id not in self.claims:
             raise KeyError(f"Unknown claim: {claim_id}")
@@ -100,6 +113,7 @@ class Ledger:
             contributor_id=contributor_id,
             supports_claim=supports_claim,
             profile=profile,
+            metadata=metadata or {},
         )
         self.evidence[evidence.id] = evidence
         self.claims[claim_id].evidence_ids.append(evidence.id)
@@ -114,6 +128,7 @@ class Ledger:
                 "contributor_id": contributor_id,
                 "supports_claim": supports_claim,
                 "profile": profile.as_dict(),
+                "metadata": evidence.metadata,
             },
         )
         return evidence
@@ -157,18 +172,39 @@ class Ledger:
         self._record("challenge.created", challenge.id, {"claim_id": claim_id, "description": description, "challenger_id": challenger_id, "counter_evidence_ids": counter_evidence_ids})
         return challenge
 
-    def assess_claim(self, claim_id: str, status: str, *, evidence_level: str = "E0", summary: str = "") -> Claim:
+    def assess_claim(self, claim_id: str, status: str, *, evidence_level: str = "E0", summary: str = "", supporting_evidence_ids: list[str] | None = None, contradicting_evidence_ids: list[str] | None = None, limitations: list[str] | None = None) -> Claim:
         if claim_id not in self.claims:
             raise KeyError(f"Unknown claim: {claim_id}")
-        if status not in {"proposed", "supported", "disputed", "uncertain", "superseded", "rejected"}:
+        if status not in {"proposed", "supported", "disputed", "uncertain", "superseded", "rejected", "insufficient_evidence"}:
             raise ValueError(f"Invalid claim status: {status}")
         if evidence_level not in {f"E{i}" for i in range(6)}:
             raise ValueError(f"Invalid evidence level: {evidence_level}")
         claim = self.claims[claim_id]
         claim.status = status  # type: ignore[assignment]
-        claim.assessment = Assessment(status=status, evidence_level=evidence_level, summary=summary)  # type: ignore[arg-type]
-        self._record("claim.assessed", claim_id, {"status": status, "evidence_level": evidence_level, "summary": summary})
+        claim.assessment = Assessment(
+            status=status,
+            evidence_level=evidence_level,
+            summary=summary,
+            supporting_evidence_ids=supporting_evidence_ids or [],
+            contradicting_evidence_ids=contradicting_evidence_ids or [],
+            limitations=limitations or [],
+        )  # type: ignore[arg-type]
+        self._record("claim.assessed", claim_id, {"status": status, "evidence_level": evidence_level, "summary": summary, "supporting_evidence_ids": claim.assessment.supporting_evidence_ids, "contradicting_evidence_ids": claim.assessment.contradicting_evidence_ids, "limitations": claim.assessment.limitations})
         return claim
+
+    def assess_claim_from_evidence(self, claim_id: str) -> Claim:
+        if claim_id not in self.claims:
+            raise KeyError(f"Unknown claim: {claim_id}")
+        result = assess_claim(self.claims[claim_id], self.evidence, self.provenance)
+        return self.assess_claim(
+            claim_id,
+            result.status,
+            evidence_level=result.evidence_level,
+            summary=result.summary,
+            supporting_evidence_ids=list(result.supporting_ids),
+            contradicting_evidence_ids=list(result.contradicting_ids),
+            limitations=list(result.limitations) + list(result.provenance_notes),
+        )
 
     def get_claim(self, claim_id: str) -> Claim:
         return self.claims[claim_id]
