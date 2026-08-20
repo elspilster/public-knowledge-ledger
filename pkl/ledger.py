@@ -1,38 +1,76 @@
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from typing import Any
 
 from .assessment import assess_claim
 from .audit import AuditChain
 from .key_registry import KeyRecord, KeyRegistry
 from .models import Assessment, Challenge, Claim, Evidence, EvidenceProfile, new_id, utc_now
-from .provenance import ProvenanceGraph
+from .provenance import ProvenanceGraph, Relation
 from .replay import replay
 
 
-class Ledger:
-    """Append-only PKL ledger state and operations."""
+@dataclass
+class LedgerEvent:
+    id: str
+    event_type: str
+    object_id: str
+    timestamp: str
+    payload: dict[str, Any]
 
-    def __init__(self) -> None:
-        self.claims: dict[str, Claim] = {}
-        self.evidence: dict[str, Evidence] = {}
-        self.challenges: dict[str, Challenge] = {}
-        self.provenance = ProvenanceGraph()
-        self.events: list[Any] = []
-        self.audit = AuditChain()
-        self.keys = KeyRegistry()
+
+@dataclass
+class Ledger:
+    claims: dict[str, Claim] = field(default_factory=dict)
+    evidence: dict[str, Evidence] = field(default_factory=dict)
+    challenges: dict[str, Challenge] = field(default_factory=dict)
+    provenance: ProvenanceGraph = field(default_factory=ProvenanceGraph)
+    events: list[LedgerEvent] = field(default_factory=list)
+    audit: AuditChain = field(default_factory=AuditChain)
+    keys: KeyRegistry = field(default_factory=KeyRegistry)
 
     def _record(self, event_type: str, object_id: str, payload: dict[str, Any]) -> None:
-        event = self.audit.append(event_type, object_id, payload)
+        event_id = new_id("EVT")
+        timestamp = utc_now()
+        event = LedgerEvent(event_id, event_type, object_id, timestamp, payload)
         self.events.append(event)
+        self.audit.append(event_id, event_type, object_id, timestamp, payload)
 
-    def _record_claim_event(self, event_type: str, claim_id: str, payload: dict[str, Any]) -> None:
-        self._record(event_type, claim_id, payload)
+    def register_key(self, contributor_id: str, key_id: str, public_key: bytes) -> KeyRecord:
+        if not contributor_id or not key_id or not public_key:
+            raise ValueError("contributor_id, key_id and public_key are required")
+        event_id = new_id("EVT")
+        timestamp = utc_now()
+        record = KeyRecord(contributor_id, key_id, public_key, event_id)
+        self.keys.register(record)
+        payload = {"contributor_id": contributor_id, "key_id": key_id, "public_key": public_key.hex(), "valid_from_event": event_id}
+        self.events.append(LedgerEvent(event_id, "key.registered", key_id, timestamp, payload))
+        self.audit.append(event_id, "key.registered", key_id, timestamp, payload)
+        return record
+
+    def revoke_key(self, key_id: str, replaced_by: str | None = None) -> KeyRecord:
+        event_id = new_id("EVT")
+        timestamp = utc_now()
+        if replaced_by is not None:
+            replacement = self.keys.get(replaced_by)
+            if replacement.revoked_at_event is not None:
+                raise ValueError("Replacement key is revoked")
+            if replacement.contributor_id != self.keys.get(key_id).contributor_id:
+                raise ValueError("Replacement key belongs to a different contributor")
+        updated = self.keys.revoke(key_id, event_id, replaced_by)
+        payload = {"contributor_id": updated.contributor_id, "key_id": key_id, "revoked_at_event": event_id, "replaced_by": replaced_by}
+        self.events.append(LedgerEvent(event_id, "key.revoked", key_id, timestamp, payload))
+        self.audit.append(event_id, "key.revoked", key_id, timestamp, payload)
+        return updated
+
+    def _record_claim_event(self, event_type: str, object_id: str, payload: dict[str, Any]) -> None:
+        self._record(event_type, object_id, payload)
 
     def create_claim(self, text: str, contributor_id: str | None = None) -> Claim:
-        if not text.strip():
+        if not text or not text.strip():
             raise ValueError("Claim text is required")
-        claim = Claim(id=new_id("CLM"), text=text, contributor_id=contributor_id, created_at=utc_now())
+        claim = Claim(id=new_id("PKL"), text=text, contributor_id=contributor_id)
         self.claims[claim.id] = claim
         self._record_claim_event("claim.created", claim.id, {"text": text, "contributor_id": contributor_id})
         return claim
@@ -47,11 +85,7 @@ class Ledger:
             if current == target_id:
                 return True
             visited.add(current)
-            pending.extend(
-                related_id
-                for related_id in self.claims[current].related_claim_ids
-                if related_id not in visited
-            )
+            pending.extend(self.claims[current].related_claim_ids)
         return False
 
     def relate_claims(self, first_id: str, second_id: str, relation: str) -> None:
@@ -81,7 +115,10 @@ class Ledger:
     ) -> Evidence:
         if claim_id not in self.claims:
             raise KeyError(f"Unknown claim: {claim_id}")
+        if not title or not description:
+            raise ValueError("Evidence title and description are required")
         profile = profile or EvidenceProfile()
+        profile.validate()
         evidence = Evidence(
             id=new_id("EVD"),
             claim_id=claim_id,
@@ -111,9 +148,28 @@ class Ledger:
         )
         return evidence
 
+    def update_evidence_profile(self, evidence_id: str, profile: EvidenceProfile) -> Evidence:
+        if evidence_id not in self.evidence:
+            raise KeyError(f"Unknown evidence: {evidence_id}")
+        profile.validate()
+        evidence = self.evidence[evidence_id]
+        evidence.profile = profile
+        self._record("evidence.profile_updated", evidence_id, {"profile": profile.as_dict()})
+        return evidence
+
+    def link_evidence(self, source_id: str, target_id: str, relation: Relation, note: str = "") -> None:
+        if source_id not in self.evidence or target_id not in self.evidence:
+            raise KeyError("Provenance links must reference known evidence")
+        edge = self.provenance.add(source_id, target_id, relation, note)
+        self._record("evidence.provenance_linked", source_id, {"source_id": edge.source_id, "target_id": edge.target_id, "relation": edge.relation, "note": edge.note})
+
+    def evidence_independence(self, first_id: str, second_id: str) -> str:
+        if first_id not in self.evidence or second_id not in self.evidence:
+            raise KeyError("Independence checks must reference known evidence")
+        return self.provenance.independence_hint(first_id, second_id)
+
     def add_provenance_edge(self, source_id: str, target_id: str, relation: str = "derived_from") -> None:
-        self.provenance.add_edge(source_id, target_id, relation)
-        self._record("provenance.added", source_id, {"source_id": source_id, "target_id": target_id, "relation": relation})
+        self.link_evidence(source_id, target_id, relation)  # type: ignore[arg-type]
 
     def challenge_claim(self, claim_id: str, description: str, *, challenger_id: str | None = None, counter_evidence_ids: list[str] | None = None) -> Challenge:
         if claim_id not in self.claims:
@@ -130,7 +186,17 @@ class Ledger:
         self._record("challenge.created", challenge.id, {"claim_id": claim_id, "description": description, "challenger_id": challenger_id, "counter_evidence_ids": counter_evidence_ids})
         return challenge
 
-    def assess_claim(self, claim_id: str, status: str, *, evidence_level: str = "E0", summary: str = "", supporting_evidence_ids: list[str] | None = None, contradicting_evidence_ids: list[str] | None = None, limitations: list[str] | None = None) -> Claim:
+    def assess_claim(
+        self,
+        claim_id: str,
+        status: str,
+        *,
+        evidence_level: str = "E0",
+        summary: str = "",
+        supporting_evidence_ids: list[str] | None = None,
+        contradicting_evidence_ids: list[str] | None = None,
+        limitations: list[str] | None = None,
+    ) -> Claim:
         if claim_id not in self.claims:
             raise KeyError(f"Unknown claim: {claim_id}")
         if status not in {"proposed", "supported", "disputed", "uncertain", "superseded", "rejected", "insufficient_evidence"}:
@@ -168,7 +234,7 @@ class Ledger:
     def get_claim(self, claim_id: str) -> Claim:
         return self.claims[claim_id]
 
-    def history(self, object_id: str | None = None) -> list[Any]:
+    def history(self, object_id: str | None = None) -> list[LedgerEvent]:
         if object_id is None:
             return list(self.events)
         return [event for event in self.events if event.object_id == object_id]
@@ -196,3 +262,26 @@ class Ledger:
             },
             "provenance": [edge.__dict__.copy() for edge in self.provenance.edges],
         }
+
+    def _events_match_audit(self) -> bool:
+        if len(self.events) != len(self.audit.events):
+            return False
+        return all(
+            live.id == audit.event_id
+            and live.event_type == audit.event_type
+            and live.object_id == audit.object_id
+            and live.timestamp == audit.timestamp
+            and live.payload == audit.payload
+            for live, audit in zip(self.events, self.audit.events)
+        )
+
+    def verify_state(self) -> bool:
+        if not self.verify_history() or not self._events_match_audit():
+            return False
+        try:
+            return self.replay_state() == self.current_state()
+        except (KeyError, TypeError, ValueError):
+            return False
+
+    def verify(self) -> bool:
+        return self.verify_state()
