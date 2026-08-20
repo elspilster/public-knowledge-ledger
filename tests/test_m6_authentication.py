@@ -39,9 +39,17 @@ def test_signature_substitution_is_rejected():
     signer = generate_signer("human-1")
     attacker = generate_signer("attacker")
     chain = signed_chain(signer)
-    attacker_signature = sign_event(attacker, chain.events[0].event_id, chain.events[0].event_type, chain.events[0].object_id, chain.events[0].timestamp, chain.events[0].payload, chain.events[0].previous_hash)
+    attacker_signature = sign_event(
+        attacker,
+        chain.events[0].event_id,
+        chain.events[0].event_type,
+        chain.events[0].object_id,
+        chain.events[0].timestamp,
+        chain.events[0].payload,
+        chain.events[0].previous_hash,
+    )
     chain.events[0] = replace(chain.events[0], signature=attacker_signature)
-    assert chain.verify() is True
+    assert chain.verify() is False
     assert chain.verify_signatures({signer.key_id: signer.public_key}, require_signatures=True) is False
 
 
@@ -49,7 +57,7 @@ def test_signature_tampering_is_rejected():
     signer = generate_signer("human-1")
     chain = signed_chain(signer)
     chain.events[0] = replace(chain.events[0], signature="00" * 64)
-    assert chain.verify() is True
+    assert chain.verify() is False
     assert chain.verify_signatures({signer.key_id: signer.public_key}, require_signatures=True) is False
 
 
