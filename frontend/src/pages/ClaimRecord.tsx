@@ -9,6 +9,15 @@ export type ClaimRecordProps = {
   relationships: string[];
 };
 
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="pkl-section">
+      <h2>{title}</h2>
+      {children}
+    </section>
+  );
+}
+
 export function ClaimRecord({
   id,
   title,
@@ -20,33 +29,42 @@ export function ClaimRecord({
   relationships,
 }: ClaimRecordProps) {
   return (
-    <main>
-      <header>
-        <p>{id}</p>
+    <main className="pkl-record">
+      <header className="pkl-header">
+        <p className="pkl-id">{id}</p>
         <h1>{title}</h1>
         <p>{category}</p>
-        <strong>{status}</strong>
+        <strong className="pkl-status">{status}</strong>
       </header>
 
-      <section>
-        <h2>Claim</h2>
-        <p>{statement}</p>
-      </section>
+      <Section title="Claim">
+        <p className="pkl-statement">{statement}</p>
+      </Section>
 
-      <section>
-        <h2>Evidence</h2>
-        <ul>{evidence.map((item) => <li key={item}>{item}</li>)}</ul>
-      </section>
+      <Section title="Evidence trail">
+        <ul>
+          {evidence.map((item) => <li key={item}>{item}</li>)}
+        </ul>
+      </Section>
 
-      <section>
-        <h2>Limitations</h2>
-        <ul>{limitations.map((item) => <li key={item}>{item}</li>)}</ul>
-      </section>
+      <Section title="Known limitations">
+        <ul>
+          {limitations.map((item) => <li key={item}>{item}</li>)}
+        </ul>
+      </Section>
 
-      <section>
-        <h2>Related claims</h2>
-        <ul>{relationships.map((item) => <li key={item}>{item}</li>)}</ul>
-      </section>
+      <Section title="Related knowledge">
+        <ul>
+          {relationships.map((item) => <li key={item}>{item}</li>)}
+        </ul>
+      </Section>
+
+      <Section title="Record note">
+        <p>
+          This PKL record represents a current evidence assessment and may be
+          revised as new evidence emerges.
+        </p>
+      </Section>
     </main>
   );
 }
