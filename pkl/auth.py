@@ -31,13 +31,7 @@ class Signer:
 
 
 def generate_signer(contributor_id: str) -> Signer:
-    """Generate a key version for a contributor.
-
-    The contributor ID is not itself the cryptographic key ID. Each generated
-    key receives a stable, unique identifier derived from its public key, so a
-    contributor can rotate credentials without collapsing multiple key
-    versions into one registry slot.
-    """
+    """Generate a key version for a contributor."""
     if not contributor_id:
         raise ValueError("contributor_id is required")
     if Ed25519PrivateKey is None:
@@ -45,27 +39,45 @@ def generate_signer(contributor_id: str) -> Signer:
     private = Ed25519PrivateKey.generate()
     public_key = private.public_key().public_bytes_raw()
     key_id = f"{contributor_id}:{hashlib.sha256(public_key).hexdigest()[:16]}"
-    return Signer(
-        key_id=key_id,
-        private_key=private.private_bytes_raw(),
-        public_key=public_key,
-    )
+    return Signer(key_id=key_id, private_key=private.private_bytes_raw(), public_key=public_key)
 
 
-def sign_event(signer: Signer, event_id: str, event_type: str, object_id: str, timestamp: str, payload: dict, previous_hash: str) -> str:
+def sign_event(
+    signer: Signer,
+    event_id: str,
+    event_type: str,
+    object_id: str,
+    timestamp: str,
+    payload: dict,
+    previous_hash: str,
+    signer_key_id: str | None = None,
+) -> str:
     if Ed25519PrivateKey is None:
         raise RuntimeError("cryptography is required for signed events")
+    signer_key_id = signer_key_id or signer.key_id
+    if signer_key_id != signer.key_id:
+        raise ValueError("signer_key_id must match signer.key_id")
     private = Ed25519PrivateKey.from_private_bytes(signer.private_key)
-    data = _canonical_event_data(event_id, event_type, object_id, timestamp, payload, previous_hash)
+    data = _canonical_event_data(event_id, event_type, object_id, timestamp, payload, previous_hash, signer_key_id)
     return private.sign(data).hex()
 
 
-def verify_event_signature(public_key: bytes, signature: str, event_id: str, event_type: str, object_id: str, timestamp: str, payload: dict, previous_hash: str) -> bool:
+def verify_event_signature(
+    public_key: bytes,
+    signature: str,
+    event_id: str,
+    event_type: str,
+    object_id: str,
+    timestamp: str,
+    payload: dict,
+    previous_hash: str,
+    signer_key_id: str | None = None,
+) -> bool:
     if Ed25519PublicKey is None:
         raise RuntimeError("cryptography is required for signed events")
     try:
         public = Ed25519PublicKey.from_public_bytes(public_key)
-        data = _canonical_event_data(event_id, event_type, object_id, timestamp, payload, previous_hash)
+        data = _canonical_event_data(event_id, event_type, object_id, timestamp, payload, previous_hash, signer_key_id)
         public.verify(bytes.fromhex(signature), data)
         return True
     except (ValueError, TypeError, InvalidSignature):
