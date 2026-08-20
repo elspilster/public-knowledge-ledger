@@ -46,6 +46,37 @@ def test_disclosed_shared_correlation_is_load_bearing_for_family_counting():
     assert any("counted as one recorded evidence family" in limitation for limitation in result.limitations)
 
 
+def test_shared_coi_overrides_apparent_provenance_distinctness():
+    ledger = Ledger()
+    claim = ledger.create_claim("A claim with apparently independent studies")
+    first = ledger.add_evidence(
+        claim.id,
+        "Study A",
+        "Different laboratory",
+        source="journal-a",
+        supports_claim=True,
+        profile=EvidenceProfile(provenance_distinctness="I4"),
+        metadata={"conflicts_of_interest": ["manufacturer-x"]},
+    )
+    second = ledger.add_evidence(
+        claim.id,
+        "Study B",
+        "Different laboratory",
+        source="journal-b",
+        supports_claim=True,
+        profile=EvidenceProfile(provenance_distinctness="I4"),
+        metadata={"conflicts_of_interest": ["manufacturer-x"]},
+    )
+
+    result = ledger.assess_claim_from_evidence(claim.id)
+
+    assert first.id in result.supporting_evidence_ids
+    assert second.id in result.supporting_evidence_ids
+    assert result.status == "uncertain"
+    assert result.evidence_level == "E2"
+    assert any("affects family counting" in limitation for limitation in result.limitations)
+
+
 def test_conflicts_of_interest_are_load_bearing_for_family_counting():
     ledger = Ledger()
     claim = ledger.create_claim("A claim with shared conflict")
