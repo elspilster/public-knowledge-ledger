@@ -56,7 +56,7 @@ def test_tampered_delegate_key_is_rejected():
     trust = RootOfTrust(Authority(root.key_id, root.public_key))
     forged = make_delegation(root, delegate)
     forged = SignedDelegation(forged.event_id, forged.authority_id, forged.delegate_id, attacker_key, forged.signature, forged.previous_hash)
-    with pytest.raises(ValueError, match="Invalid delegation signature"):
+    with pytest.raises(ValueError, match="Delegate key identity does not match public key"):
         trust.add_delegation(forged)
 
 
@@ -66,8 +66,9 @@ def test_duplicate_delegate_is_rejected():
     trust = RootOfTrust(Authority(root.key_id, root.public_key))
     delegation = make_delegation(root, delegate)
     trust.add_delegation(delegation)
+    replacement = make_delegation(root, delegate, event_id="EVT-2")
     with pytest.raises(ValueError, match="already exists"):
-        trust.add_delegation(delegation)
+        trust.add_delegation(replacement)
 
 
 def test_self_delegation_is_rejected():
