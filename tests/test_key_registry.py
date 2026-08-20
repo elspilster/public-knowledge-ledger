@@ -35,7 +35,7 @@ def test_duplicate_key_registration_is_rejected():
     registry = KeyRegistry()
     record = KeyRecord("human-1", signer.key_id, signer.public_key, "EVT-1")
     registry.register(record)
-    with pytest.raises(ValueError, match="already registered"):
+    with pytest.raises(ValueError, match="Key id cannot be reused"):
         registry.register(record)
 
 
