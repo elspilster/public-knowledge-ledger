@@ -16,7 +16,7 @@ def test_tampered_delegation_key_is_rejected():
     signature = sign_event(root, event_id, "authority.delegated", "delegate", event_id, payload, previous_hash)
     delegation = SignedDelegation(event_id, "root", "delegate", forged_key, signature, previous_hash)
     trust = RootOfTrust(Authority("root", root.public_key))
-    with pytest.raises(ValueError, match="Invalid delegation signature"):
+    with pytest.raises(ValueError, match="Delegate key identity does not match public key"):
         trust.add_delegation(delegation)
 
 
