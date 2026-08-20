@@ -41,6 +41,7 @@ PROFILE_DIMENSIONS = (
     "bias_risk",
     "transparency",
     "predictive_success",
+    "contradictory_evidence",
     "relevance",
 )
 
@@ -49,12 +50,13 @@ PROFILE_DIMENSIONS = (
 class EvidenceProfile:
     methodology_quality: int | None = None
     source_quality: int | None = None
-    independence: int | None = None  # legacy alias; prefer provenance_distinctness
+    independence: int | None = None  # legacy dimension; prefer provenance_distinctness
     replication: int | None = None
     sample_data_strength: int | None = None
     bias_risk: int | None = None
     transparency: int | None = None
     predictive_success: int | None = None
+    contradictory_evidence: int | None = None  # legacy compatibility; contradiction is relational
     relevance: int | None = None
     independence_level: str = "I0"  # legacy field retained for v0.1 compatibility
     provenance_distinctness: str | None = None
