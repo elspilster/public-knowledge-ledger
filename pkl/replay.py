@@ -51,6 +51,11 @@ def apply_event(state: ReplayState, event_type: str, object_id: str, payload: di
         }
         return
 
+    if event_type == "claim.related":
+        if object_id not in state.claims or payload["second_id"] not in state.claims:
+            raise ValueError("Claim relationship references unknown claim")
+        return
+
     if event_type == "evidence.added":
         if object_id in state.evidence:
             raise ValueError(f"Evidence already exists: {object_id}")
@@ -105,7 +110,7 @@ def apply_event(state: ReplayState, event_type: str, object_id: str, payload: di
             raise ValueError(f"Assessment references unknown claim: {object_id}")
         status = payload["status"]
         evidence_level = payload["evidence_level"]
-        if status not in {"proposed", "supported", "disputed", "uncertain", "superseded", "rejected"}:
+        if status not in {"proposed", "supported", "disputed", "uncertain", "superseded", "rejected", "insufficient_evidence"}:
             raise ValueError(f"Invalid claim status: {status}")
         if evidence_level not in {f"E{i}" for i in range(6)}:
             raise ValueError(f"Invalid evidence level: {evidence_level}")
