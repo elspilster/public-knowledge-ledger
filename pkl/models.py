@@ -1,7 +1,8 @@
 """Core domain models for PKL v0.1.
 
-The models deliberately keep evidence dimensions separate instead of
-collapsing them into one opaque confidence score.
+Evidence dimensions remain separate. Provenance distinctness is explicitly
+limited to dependencies recorded by PKL and is not a claim of epistemic
+independence.
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ Status = Literal[
     "uncertain",
     "superseded",
     "rejected",
+    "insufficient_evidence",
 ]
 
 INDEPENDENCE_LEVELS = {f"I{i}" for i in range(5)}
@@ -39,7 +41,6 @@ PROFILE_DIMENSIONS = (
     "bias_risk",
     "transparency",
     "predictive_success",
-    "contradictory_evidence",
     "relevance",
 )
 
@@ -48,22 +49,17 @@ PROFILE_DIMENSIONS = (
 class EvidenceProfile:
     methodology_quality: int | None = None
     source_quality: int | None = None
-    independence: int | None = None
+    independence: int | None = None  # legacy alias; prefer provenance_distinctness
     replication: int | None = None
     sample_data_strength: int | None = None
     bias_risk: int | None = None
     transparency: int | None = None
     predictive_success: int | None = None
-    contradictory_evidence: int | None = None
     relevance: int | None = None
-    independence_level: str = "I0"
+    independence_level: str = "I0"  # legacy field retained for v0.1 compatibility
+    provenance_distinctness: str | None = None
 
     def validate(self) -> None:
-        """Validate independently recorded profile dimensions.
-
-        Dimensions use a simple 0-5 ordinal scale. PKL intentionally does not
-        aggregate these values into a single confidence score.
-        """
         for name in PROFILE_DIMENSIONS:
             value = getattr(self, name)
             if value is not None and not isinstance(value, int):
@@ -72,6 +68,8 @@ class EvidenceProfile:
                 raise ValueError(f"{name} must be between 0 and 5")
         if self.independence_level not in INDEPENDENCE_LEVELS:
             raise ValueError(f"Invalid independence level: {self.independence_level}")
+        if self.provenance_distinctness is not None and self.provenance_distinctness not in INDEPENDENCE_LEVELS:
+            raise ValueError(f"Invalid provenance distinctness: {self.provenance_distinctness}")
 
     def as_dict(self) -> dict[str, Any]:
         self.validate()
@@ -109,6 +107,9 @@ class Assessment:
     status: Status = "proposed"
     evidence_level: str = "E0"
     summary: str = ""
+    supporting_evidence_ids: list[str] = field(default_factory=list)
+    contradicting_evidence_ids: list[str] = field(default_factory=list)
+    limitations: list[str] = field(default_factory=list)
     assessed_at: str = field(default_factory=utc_now)
 
 
@@ -121,9 +122,9 @@ class Claim:
     assessment: Assessment = field(default_factory=Assessment)
     evidence_ids: list[str] = field(default_factory=list)
     challenge_ids: list[str] = field(default_factory=list)
+    related_claim_ids: list[str] = field(default_factory=list)
     created_at: str = field(default_factory=utc_now)
     metadata: dict[str, Any] = field(default_factory=dict)
-
 
 
 def to_dict(value: Any) -> dict[str, Any]:
