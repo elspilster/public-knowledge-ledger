@@ -62,3 +62,42 @@ def test_invalid_evidence_level_is_rejected():
     claim = ledger.create_claim("Test claim")
     with pytest.raises(ValueError):
         ledger.assess_claim(claim.id, "supported", evidence_level="E9")
+
+
+def test_claim_relationship_duplicate_is_rejected():
+    ledger = Ledger()
+    first = ledger.create_claim("Claim A")
+    second = ledger.create_claim("Claim B")
+
+    ledger.relate_claims(first.id, second.id, "semantically_related")
+
+    with pytest.raises(ValueError, match="already exists"):
+        ledger.relate_claims(first.id, second.id, "semantically_related")
+
+
+def test_claim_relationship_cycle_is_rejected():
+    ledger = Ledger()
+    first = ledger.create_claim("Claim A")
+    second = ledger.create_claim("Claim B")
+    third = ledger.create_claim("Claim C")
+
+    ledger.relate_claims(first.id, second.id, "narrower_than")
+    ledger.relate_claims(second.id, third.id, "broader_than")
+
+    with pytest.raises(ValueError, match="cannot create cycles"):
+        ledger.relate_claims(third.id, first.id, "semantically_related")
+
+
+def test_rejected_claim_relationship_does_not_change_state_or_history():
+    ledger = Ledger()
+    first = ledger.create_claim("Claim A")
+    second = ledger.create_claim("Claim B")
+    ledger.relate_claims(first.id, second.id, "duplicate_of")
+    event_count = len(ledger.events)
+
+    with pytest.raises(ValueError):
+        ledger.relate_claims(second.id, first.id, "duplicate_of")
+
+    assert ledger.claims[second.id].related_claim_ids == []
+    assert len(ledger.events) == event_count
+    assert ledger.verify()
