@@ -105,6 +105,16 @@ class Challenge:
 
 
 @dataclass
+class AssessmentReview:
+    id: str
+    claim_id: str
+    reviewer_id: str
+    position: Status
+    rationale: str
+    created_at: str = field(default_factory=utc_now)
+
+
+@dataclass
 class Assessment:
     status: Status = "proposed"
     evidence_level: str = "E0"
@@ -122,8 +132,10 @@ class Claim:
     contributor_id: str | None = None
     status: Status = "proposed"
     assessment: Assessment = field(default_factory=Assessment)
+    assessment_history: list[Assessment] = field(default_factory=list)
     evidence_ids: list[str] = field(default_factory=list)
     challenge_ids: list[str] = field(default_factory=list)
+    assessment_review_ids: list[str] = field(default_factory=list)
     related_claim_ids: list[str] = field(default_factory=list)
     created_at: str = field(default_factory=utc_now)
     metadata: dict[str, Any] = field(default_factory=dict)
