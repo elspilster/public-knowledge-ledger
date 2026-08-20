@@ -11,9 +11,11 @@ The system must preserve the distinction between:
 
 1. the claim itself;
 2. the quality of individual evidence;
-3. the independence of evidence;
+3. recorded provenance distinctness of evidence;
 4. whether evidence supports or contradicts the claim; and
 5. the historical reliability of the contributor.
+
+PKL does **not** claim that a ledger assessment establishes metaphysical or real-world truth. An assessment is a reproducible interpretation of the evidence and metadata currently recorded in PKL under a named assessment method.
 
 ## 2. Claim
 
@@ -29,6 +31,8 @@ A claim should have:
 - linked challenges;
 - provenance/history;
 - status such as proposed, supported, disputed, uncertain, superseded, or rejected.
+
+A claim status is therefore a **current recorded assessment state**, not a declaration that the claim is objectively true or false.
 
 ## 3. Evidence
 
@@ -52,8 +56,7 @@ An evidence record should capture, where available:
 PKL should avoid reducing evidence to one opaque score. Important dimensions should be independently recorded, including:
 
 - methodology quality;
-- source quality;
-- independence;
+- recorded provenance distinctness;
 - replication;
 - sample/data strength;
 - bias risk;
@@ -62,7 +65,7 @@ PKL should avoid reducing evidence to one opaque score. Important dimensions sho
 - contradictory evidence;
 - relevance to the claim.
 
-An overall assessment may be derived from these dimensions, but the underlying dimensions remain visible.
+An overall assessment may be derived from these dimensions, but the underlying dimensions remain visible. A particular assessment engine may use only a subset of these dimensions; when it does, its scope and limitations must be explicit rather than implying that unused dimensions were evaluated.
 
 ## 5. Evidence Levels
 
@@ -71,25 +74,27 @@ The original PKL scale is retained as a coarse summary, not as a replacement for
 - **E0** — assertion/no supporting evidence
 - **E1** — anecdotal observation
 - **E2** — repeated observation
-- **E3** — independent reproduction/confirmation
+- **E3** — independently reproduced/confirmed evidence under the assessment method's recorded provenance rules
 - **E4** — successful predictive testing
 - **E5** — convergent, independently supported evidence with reproducible results and no credible contradictory evidence sufficient to overturn the assessment
 
-The E-level must not conceal important weaknesses in individual evidence dimensions.
+The E-level must not conceal important weaknesses in individual evidence dimensions. An E-level is a summary produced by an assessment method, not a truth score.
 
-## 6. Independence validation
+## 6. Recorded provenance distinctness
 
-PKL should explicitly assess whether evidence is genuinely independent.
+PKL must distinguish **recorded provenance distinctness** from epistemic independence.
+
+Recorded provenance distinctness describes the degree to which PKL's recorded provenance graph finds evidence to have separate origins, sources, or dependency chains. It does **not** establish that the evidence is epistemically independent in the wider world.
 
 Suggested levels:
 
-- **I0** — independence unknown
-- **I1** — evidence is materially dependent on the same underlying source
-- **I2** — partly independent; significant shared sources, data, assumptions, or methods
-- **I3** — independently produced evidence
-- **I4** — strongly independent evidence using substantially independent investigators, data, methods, or sources that converge on the relevant result
+- **I0** — recorded distinctness unknown
+- **I1** — evidence is materially dependent on the same recorded underlying source
+- **I2** — partly distinct; significant shared recorded sources, data, or methods
+- **I3** — separately produced within the recorded provenance graph
+- **I4** — strongly distinct within the recorded provenance graph, using substantially separate recorded investigators, data, methods, or sources
 
-Different publications do not automatically constitute independent evidence. Provenance should be traced where possible.
+Different publications do not automatically constitute distinct evidence. Provenance should be traced where possible. Hidden dependencies, shared incentives, common assumptions, undisclosed communications, and other relationships outside PKL's recorded data may remain undetected.
 
 ## 7. Challenges
 
@@ -125,7 +130,7 @@ A contributor may propose an evidence rating, but the proposer does not have uni
 
 ## 10. Provenance graph
 
-Evidence relationships should be representable as a graph so PKL can distinguish independent evidence from repeated copies or derivative reporting.
+Evidence relationships should be representable as a graph so PKL can distinguish recorded provenance families from repeated copies or derivative reporting.
 
 Example:
 
@@ -135,7 +140,7 @@ Evidence B -> Independent study Y
 Evidence C -> Article citing study X
 ```
 
-A and B may be independent. C should not automatically count as a third independent confirmation.
+A and B may be recorded as distinct. C should not automatically count as a third distinct confirmation.
 
 ## 11. History and auditability
 
@@ -143,9 +148,21 @@ Material changes should create a new historical event rather than overwriting th
 
 ## 12. Current design principle
 
-> Count independent evidence, not repeated claims.
+> Count recorded evidence families, not repeated claims — and state clearly what the assessment method actually measures.
 
-## 13. Open questions
+## 13. Assessment and overview boundary
+
+PKL distinguishes three layers:
+
+1. **Evidence overview** — a structured description of the evidence, provenance, relationships, challenges, and limitations currently recorded.
+2. **Derived assessment** — a deterministic or otherwise specified interpretation produced by a named assessment engine from that recorded state.
+3. **Truth** — a property of the world that PKL does not establish merely by recording, authenticating, or assessing evidence.
+
+M2 is an **assessment engine and evidence overview**, not a truth oracle. A consumer must be able to identify which engine produced an assessment and inspect the evidence and limitations behind it.
+
+Where competing assessment engines produce different results, PKL should preserve the competing assessments rather than silently treating one as objectively correct.
+
+## 14. Open questions
 
 The following remain deliberately unresolved and require testing before v1.0:
 
@@ -156,4 +173,6 @@ The following remain deliberately unresolved and require testing before v1.0:
 - database schema and API contract;
 - privacy and redaction rules;
 - abuse resistance and Sybil resistance;
-- dispute resolution when reviewers remain divided.
+- dispute resolution when reviewers remain divided;
+- how competing assessment engines are identified, versioned, and compared;
+- which Evidence Profile dimensions each assessment engine is permitted or required to use.
