@@ -136,5 +136,5 @@ def test_no_evidence_is_explicitly_insufficient():
 
     assert assessed.status == "insufficient_evidence"
     assert assessed.evidence_level == "E0"
-    assert "No evidence" in assessed.assessment.summary
+    assert "No evidence" in assessed.summary
     assert ledger.history(claim.id)[-1].event_type == "claim.assessed"
