@@ -29,7 +29,7 @@ def test_delegate_cannot_replace_existing_authority_key():
     trust = RootOfTrust(Authority(root.key_id, root.public_key))
     trust.add_delegation(delegation(root, delegate))
     forged = delegation(root, replacement, delegate_id=delegate.key_id)
-    with pytest.raises(ValueError, match="Delegate key identity does not match public key"):
+    with pytest.raises(ValueError, match="Delegate already exists"):
         trust.add_delegation(forged)
 
 
@@ -57,5 +57,5 @@ def test_root_key_cannot_be_delegated_as_a_different_authority():
     attacker = generate_signer("attacker")
     trust = RootOfTrust(Authority(root.key_id, root.public_key))
     forged = delegation(root, attacker, delegate_id=root.key_id)
-    with pytest.raises(ValueError, match="Delegate key identity does not match public key"):
+    with pytest.raises(ValueError, match="Delegate already exists"):
         trust.add_delegation(forged)
