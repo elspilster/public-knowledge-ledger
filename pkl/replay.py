@@ -11,6 +11,7 @@ class ReplayState:
     claims: dict[str, dict[str, Any]] = field(default_factory=dict)
     evidence: dict[str, dict[str, Any]] = field(default_factory=dict)
     challenges: dict[str, dict[str, Any]] = field(default_factory=dict)
+    assessment_reviews: dict[str, dict[str, Any]] = field(default_factory=dict)
     provenance: list[dict[str, Any]] = field(default_factory=list)
     keys: dict[str, dict[str, Any]] = field(default_factory=dict)
 
@@ -48,7 +49,15 @@ def apply_event(state: ReplayState, event_type: str, object_id: str, payload: di
             "status": "proposed",
             "evidence_level": "E0",
             "summary": "",
+            "assessment_history": [],
+            "assessment_review_ids": [],
         }
+        return
+
+    if event_type == "claim.corrected":
+        if object_id not in state.claims:
+            raise ValueError(f"Correction references unknown claim: {object_id}")
+        state.claims[object_id]["text"] = payload["new_text"]
         return
 
     if event_type == "claim.related":
@@ -103,7 +112,33 @@ def apply_event(state: ReplayState, event_type: str, object_id: str, payload: di
         missing = [eid for eid in counter_ids if eid not in state.evidence]
         if missing:
             raise ValueError(f"Challenge references unknown evidence: {missing}")
-        state.challenges[object_id] = {"id": object_id, "target_id": claim_id, "description": payload["description"], "challenger_id": payload.get("challenger_id"), "counter_evidence_ids": counter_ids}
+        state.challenges[object_id] = {"id": object_id, "target_id": claim_id, "description": payload["description"], "challenger_id": payload.get("challenger_id"), "counter_evidence_ids": counter_ids, "status": "open", "resolution": None}
+        return
+
+    if event_type == "challenge.resolved":
+        if object_id not in state.challenges:
+            raise ValueError(f"Resolution references unknown challenge: {object_id}")
+        if state.challenges[object_id]["status"] == "resolved":
+            raise ValueError(f"Challenge already resolved: {object_id}")
+        state.challenges[object_id]["status"] = "resolved"
+        state.challenges[object_id]["resolution"] = payload["resolution"]
+        return
+
+    if event_type == "assessment.reviewed":
+        if object_id in state.assessment_reviews:
+            raise ValueError(f"Assessment review already exists: {object_id}")
+        claim_id = payload["claim_id"]
+        if claim_id not in state.claims:
+            raise ValueError(f"Review references unknown claim: {claim_id}")
+        state.assessment_reviews[object_id] = {
+            "id": object_id,
+            "claim_id": claim_id,
+            "reviewer_id": payload["reviewer_id"],
+            "position": payload["position"],
+            "rationale": payload["rationale"],
+            "created_at": payload["created_at"],
+        }
+        state.claims[claim_id]["assessment_review_ids"].append(object_id)
         return
 
     if event_type == "claim.assessed":
@@ -115,7 +150,17 @@ def apply_event(state: ReplayState, event_type: str, object_id: str, payload: di
             raise ValueError(f"Invalid claim status: {status}")
         if evidence_level not in {f"E{i}" for i in range(6)}:
             raise ValueError(f"Invalid evidence level: {evidence_level}")
+        assessment = {
+            "status": status,
+            "evidence_level": evidence_level,
+            "summary": payload.get("summary", ""),
+            "supporting_evidence_ids": payload.get("supporting_evidence_ids", []),
+            "contradicting_evidence_ids": payload.get("contradicting_evidence_ids", []),
+            "limitations": payload.get("limitations", []),
+            "assessed_at": payload.get("assessed_at", ""),
+        }
         state.claims[object_id].update({"status": status, "evidence_level": evidence_level, "summary": payload.get("summary", "")})
+        state.claims[object_id]["assessment_history"].append(assessment)
         return
 
     raise ValueError(f"Unknown audit event type: {event_type}")
