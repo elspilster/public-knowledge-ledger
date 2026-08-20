@@ -51,16 +51,16 @@ class RootOfTrust:
             raise ValueError("event_id is required")
         if delegation.event_id in self._event_ids:
             raise ValueError("event_id has already been used")
-        if delegation.delegate_id in self.delegations or delegation.delegate_id == self.root.authority_id:
-            raise ValueError("Delegate already exists")
         if not delegation.authority_id or not delegation.delegate_id:
             raise ValueError("authority_id and delegate_id are required")
+        if delegation.authority_id == delegation.delegate_id:
+            raise ValueError("Self-delegation is not allowed")
+        if delegation.delegate_id in self.delegations or delegation.delegate_id == self.root.authority_id:
+            raise ValueError("Delegate already exists")
         if not delegation.delegate_public_key:
             raise ValueError("delegate_public_key is required")
         if not _HASH_RE.fullmatch(delegation.previous_hash):
             raise ValueError("Invalid previous_hash")
-        if delegation.authority_id == delegation.delegate_id:
-            raise ValueError("Self-delegation is not allowed")
         if not self._valid_key_id(delegation.delegate_id, delegation.delegate_public_key):
             raise ValueError("Delegate key identity does not match public key")
 
