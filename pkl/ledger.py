@@ -75,6 +75,24 @@ class Ledger:
         self._record_claim_event("claim.created", claim.id, {"text": text, "contributor_id": contributor_id})
         return claim
 
+    def _claim_relationship_reaches(self, start_id: str, target_id: str) -> bool:
+        """Return whether target_id is reachable from start_id via recorded claim links."""
+        pending = [start_id]
+        visited: set[str] = set()
+        while pending:
+            current = pending.pop()
+            if current in visited:
+                continue
+            if current == target_id:
+                return True
+            visited.add(current)
+            pending.extend(
+                related_id
+                for related_id in self.claims[current].related_claim_ids
+                if related_id not in visited
+            )
+        return False
+
     def relate_claims(self, first_id: str, second_id: str, relation: str) -> None:
         if first_id not in self.claims or second_id not in self.claims:
             raise KeyError("Claim relationships must reference known claims")
@@ -82,8 +100,11 @@ class Ledger:
             raise ValueError("A claim cannot be related to itself")
         if relation not in {"semantically_related", "duplicate_of", "narrower_than", "broader_than"}:
             raise ValueError(f"Invalid claim relationship: {relation}")
-        if second_id not in self.claims[first_id].related_claim_ids:
-            self.claims[first_id].related_claim_ids.append(second_id)
+        if second_id in self.claims[first_id].related_claim_ids:
+            raise ValueError("This claim relationship already exists")
+        if self._claim_relationship_reaches(second_id, first_id):
+            raise ValueError("Claim relationships cannot create cycles")
+        self.claims[first_id].related_claim_ids.append(second_id)
         self._record("claim.related", first_id, {"first_id": first_id, "second_id": second_id, "relation": relation})
 
     def add_evidence(
