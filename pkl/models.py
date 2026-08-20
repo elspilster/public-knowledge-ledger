@@ -1,8 +1,4 @@
-"""Core domain models for PKL v0.1.
-
-The models deliberately keep evidence dimensions separate instead of
-collapsing them into one opaque confidence score.
-"""
+"""Core domain models for PKL v0.1."""
 
 from __future__ import annotations
 
@@ -21,26 +17,14 @@ def new_id(prefix: str) -> str:
 
 
 Status = Literal[
-    "proposed",
-    "supported",
-    "disputed",
-    "uncertain",
-    "superseded",
-    "rejected",
+    "proposed", "supported", "disputed", "uncertain", "superseded", "rejected"
 ]
 
 INDEPENDENCE_LEVELS = {f"I{i}" for i in range(5)}
 PROFILE_DIMENSIONS = (
-    "methodology_quality",
-    "source_quality",
-    "independence",
-    "replication",
-    "sample_data_strength",
-    "bias_risk",
-    "transparency",
-    "predictive_success",
-    "contradictory_evidence",
-    "relevance",
+    "methodology_quality", "source_quality", "independence", "replication",
+    "sample_data_strength", "bias_risk", "transparency", "predictive_success",
+    "contradictory_evidence", "relevance",
 )
 
 
@@ -59,11 +43,6 @@ class EvidenceProfile:
     independence_level: str = "I0"
 
     def validate(self) -> None:
-        """Validate independently recorded profile dimensions.
-
-        Dimensions use a simple 0-5 ordinal scale. PKL intentionally does not
-        aggregate these values into a single confidence score.
-        """
         for name in PROFILE_DIMENSIONS:
             value = getattr(self, name)
             if value is not None and not isinstance(value, int):
@@ -112,6 +91,16 @@ class Assessment:
     assessed_at: str = field(default_factory=utc_now)
 
 
+@dataclass(frozen=True)
+class AssessmentReview:
+    id: str
+    claim_id: str
+    reviewer_id: str
+    status: Status
+    rationale: str
+    created_at: str = field(default_factory=utc_now)
+
+
 @dataclass
 class Claim:
     id: str
@@ -121,9 +110,10 @@ class Claim:
     assessment: Assessment = field(default_factory=Assessment)
     evidence_ids: list[str] = field(default_factory=list)
     challenge_ids: list[str] = field(default_factory=list)
+    assessment_history: list[dict[str, Any]] = field(default_factory=list)
+    assessment_review_ids: list[str] = field(default_factory=list)
     created_at: str = field(default_factory=utc_now)
     metadata: dict[str, Any] = field(default_factory=dict)
-
 
 
 def to_dict(value: Any) -> dict[str, Any]:
