@@ -73,6 +73,7 @@ def apply_event(state: ReplayState, event_type: str, object_id: str, payload: di
             "contributor_id": payload.get("contributor_id"),
             "supports_claim": payload.get("supports_claim"),
             "profile": profile,
+            "metadata": payload.get("metadata", {}),
         }
         return
 
