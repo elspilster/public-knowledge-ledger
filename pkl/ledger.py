@@ -6,7 +6,7 @@ from typing import Any
 from .assessment import assess_claim
 from .audit import AuditChain
 from .key_registry import KeyRecord, KeyRegistry
-from .models import Assessment, Challenge, Claim, Evidence, EvidenceProfile, new_id, utc_now
+from .models import Assessment, AssessmentReview, Challenge, Claim, Evidence, EvidenceProfile, new_id, utc_now
 from .provenance import ProvenanceGraph, Relation
 from .replay import replay
 
@@ -25,6 +25,7 @@ class Ledger:
     claims: dict[str, Claim] = field(default_factory=dict)
     evidence: dict[str, Evidence] = field(default_factory=dict)
     challenges: dict[str, Challenge] = field(default_factory=dict)
+    assessment_reviews: dict[str, AssessmentReview] = field(default_factory=dict)
     provenance: ProvenanceGraph = field(default_factory=ProvenanceGraph)
     events: list[LedgerEvent] = field(default_factory=list)
     audit: AuditChain = field(default_factory=AuditChain)
@@ -73,6 +74,29 @@ class Ledger:
         claim = Claim(id=new_id("PKL"), text=text, contributor_id=contributor_id)
         self.claims[claim.id] = claim
         self._record_claim_event("claim.created", claim.id, {"text": text, "contributor_id": contributor_id})
+        return claim
+
+    def correct_claim(self, claim_id: str, new_text: str, *, reason: str, contributor_id: str | None = None) -> Claim:
+        """Correct a claim by appending a new event; never rewrite prior history."""
+        if claim_id not in self.claims:
+            raise KeyError(f"Unknown claim: {claim_id}")
+        if not new_text or not new_text.strip():
+            raise ValueError("Corrected claim text is required")
+        if not reason or not reason.strip():
+            raise ValueError("Correction reason is required")
+        claim = self.claims[claim_id]
+        old_text = claim.text
+        claim.text = new_text
+        self._record(
+            "claim.corrected",
+            claim_id,
+            {
+                "old_text": old_text,
+                "new_text": new_text,
+                "reason": reason,
+                "contributor_id": contributor_id,
+            },
+        )
         return claim
 
     def _claim_relationship_reaches(self, start_id: str, target_id: str) -> bool:
@@ -186,6 +210,19 @@ class Ledger:
         self._record("challenge.created", challenge.id, {"claim_id": claim_id, "description": description, "challenger_id": challenger_id, "counter_evidence_ids": counter_evidence_ids})
         return challenge
 
+    def resolve_challenge(self, challenge_id: str, resolution: str) -> Challenge:
+        if challenge_id not in self.challenges:
+            raise KeyError(f"Unknown challenge: {challenge_id}")
+        if not resolution or not resolution.strip():
+            raise ValueError("Resolution is required")
+        challenge = self.challenges[challenge_id]
+        if challenge.status == "resolved":
+            raise ValueError("Challenge is already resolved")
+        challenge.status = "resolved"
+        challenge.resolution = resolution
+        self._record("challenge.resolved", challenge_id, {"resolution": resolution})
+        return challenge
+
     def assess_claim(
         self,
         claim_id: str,
@@ -204,17 +241,34 @@ class Ledger:
         if evidence_level not in {f"E{i}" for i in range(6)}:
             raise ValueError(f"Invalid evidence level: {evidence_level}")
         claim = self.claims[claim_id]
-        claim.status = status  # type: ignore[assignment]
-        claim.assessment = Assessment(
+        assessment = Assessment(
             status=status,
             evidence_level=evidence_level,
             summary=summary,
             supporting_evidence_ids=supporting_evidence_ids or [],
             contradicting_evidence_ids=contradicting_evidence_ids or [],
             limitations=limitations or [],
-        )  # type: ignore[arg-type]
-        self._record("claim.assessed", claim_id, {"status": status, "evidence_level": evidence_level, "summary": summary, "supporting_evidence_ids": claim.assessment.supporting_evidence_ids, "contradicting_evidence_ids": claim.assessment.contradicting_evidence_ids, "limitations": claim.assessment.limitations})
+        )
+        claim.status = status  # type: ignore[assignment]
+        claim.assessment = assessment
+        claim.assessment_history.append(assessment)
+        self._record("claim.assessed", claim_id, {"status": status, "evidence_level": evidence_level, "summary": summary, "supporting_evidence_ids": claim.assessment.supporting_evidence_ids, "contradicting_evidence_ids": claim.assessment.contradicting_evidence_ids, "limitations": claim.assessment.limitations, "assessed_at": assessment.assessed_at})
         return claim
+
+    def record_assessment_review(self, claim_id: str, reviewer_id: str, position: str, rationale: str) -> AssessmentReview:
+        if claim_id not in self.claims:
+            raise KeyError(f"Unknown claim: {claim_id}")
+        if not reviewer_id or not reviewer_id.strip():
+            raise ValueError("Reviewer ID is required")
+        if not rationale or not rationale.strip():
+            raise ValueError("Review rationale is required")
+        if position not in {"proposed", "supported", "disputed", "uncertain", "superseded", "rejected", "insufficient_evidence"}:
+            raise ValueError(f"Invalid review position: {position}")
+        review = AssessmentReview(new_id("REV"), claim_id, reviewer_id, position, rationale)
+        self.assessment_reviews[review.id] = review
+        self.claims[claim_id].assessment_review_ids.append(review.id)
+        self._record("assessment.reviewed", review.id, {"claim_id": claim_id, "reviewer_id": reviewer_id, "position": position, "rationale": rationale, "created_at": review.created_at})
+        return review
 
     def assess_claim_from_evidence(self, claim_id: str) -> Assessment:
         if claim_id not in self.claims:
@@ -244,12 +298,12 @@ class Ledger:
 
     def replay_state(self) -> dict[str, Any]:
         state = replay(self.audit.events)
-        return {"claims": state.claims, "evidence": state.evidence, "challenges": state.challenges, "provenance": state.provenance}
+        return {"claims": state.claims, "evidence": state.evidence, "challenges": state.challenges, "assessment_reviews": state.assessment_reviews, "provenance": state.provenance}
 
     def current_state(self) -> dict[str, Any]:
         return {
             "claims": {
-                key: {"id": claim.id, "text": claim.text, "contributor_id": claim.contributor_id, "status": claim.status, "evidence_level": claim.assessment.evidence_level, "summary": claim.assessment.summary}
+                key: {"id": claim.id, "text": claim.text, "contributor_id": claim.contributor_id, "status": claim.status, "evidence_level": claim.assessment.evidence_level, "summary": claim.assessment.summary, "assessment_history": [assessment.__dict__.copy() for assessment in claim.assessment_history], "assessment_review_ids": list(claim.assessment_review_ids)}
                 for key, claim in self.claims.items()
             },
             "evidence": {
@@ -257,8 +311,12 @@ class Ledger:
                 for key, item in self.evidence.items()
             },
             "challenges": {
-                key: {"id": item.id, "target_id": item.target_id, "description": item.description, "challenger_id": item.challenger_id, "counter_evidence_ids": item.counter_evidence_ids}
+                key: {"id": item.id, "target_id": item.target_id, "description": item.description, "challenger_id": item.challenger_id, "counter_evidence_ids": item.counter_evidence_ids, "status": item.status, "resolution": item.resolution}
                 for key, item in self.challenges.items()
+            },
+            "assessment_reviews": {
+                key: {"id": item.id, "claim_id": item.claim_id, "reviewer_id": item.reviewer_id, "position": item.position, "rationale": item.rationale, "created_at": item.created_at}
+                for key, item in self.assessment_reviews.items()
             },
             "provenance": [edge.__dict__.copy() for edge in self.provenance.edges],
         }
