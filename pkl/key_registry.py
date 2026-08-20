@@ -23,6 +23,8 @@ class KeyRegistry:
         if not record.contributor_id or not record.key_id or not record.public_key or not record.valid_from_event:
             raise ValueError("Key record fields are required")
         versions = self._keys.get(record.key_id, [])
+        if any(r.revoked_at_event is None for r in versions):
+            raise ValueError(f"Key already registered: {record.key_id}")
         if versions:
             raise ValueError(f"Key id cannot be reused: {record.key_id}")
         active_contributor = [
