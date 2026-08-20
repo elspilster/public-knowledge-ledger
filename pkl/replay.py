@@ -57,7 +57,7 @@ def apply_event(state: ReplayState, event_type: str, object_id: str, payload: di
             raise ValueError(f"Evidence references unknown claim: {claim_id}")
         profile = dict(payload.get("profile", {}))
         profile.setdefault("independence_level", "I0")
-        state.evidence[object_id] = {"id": object_id, "claim_id": claim_id, "title": payload["title"], "description": payload["description"], "source": payload.get("source"), "contributor_id": payload.get("contributor_id"), "supports_claim": payload.get("supports_claim"), "profile": profile}
+        state.evidence[object_id] = {"id": object_id, "claim_id": claim_id, "title": payload["title"], "description": payload["description"], "source": payload.get("source"), "contributor_id": payload.get("contributor_id"), "supports_claim": payload.get("supports_claim"), "profile": profile, "metadata": dict(payload.get("metadata", {}))}
         return
     if event_type == "evidence.profile_updated":
         if object_id not in state.evidence:
