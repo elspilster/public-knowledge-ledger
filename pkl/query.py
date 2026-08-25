@@ -12,7 +12,7 @@ from .provenance import ProvenanceGraph
 class KnowledgeQuery:
     def __init__(self, ledger: Ledger, provenance: ProvenanceGraph | None = None, council: RootCouncil | None = None) -> None:
         self.ledger = ledger
-        self.provenance = provenance or ProvenanceGraph()
+        self.provenance = provenance or ledger.provenance
         self.council = council
 
     def explain(self, claim_id: str) -> dict[str, Any]:
@@ -33,6 +33,9 @@ class KnowledgeQuery:
                 "assessment": {
                     "evidence_level": claim.assessment.evidence_level,
                     "summary": claim.assessment.summary,
+                    "supporting_evidence_ids": list(claim.assessment.supporting_evidence_ids),
+                    "contradicting_evidence_ids": list(claim.assessment.contradicting_evidence_ids),
+                    "limitations": list(claim.assessment.limitations),
                     "assessed_at": claim.assessment.assessed_at,
                 },
             },
@@ -56,6 +59,7 @@ class KnowledgeQuery:
                     "challenger_id": item.challenger_id,
                     "counter_evidence_ids": list(item.counter_evidence_ids),
                     "status": item.status,
+                    "resolution": item.resolution,
                 }
                 for item in challenges
             ],
@@ -66,16 +70,28 @@ class KnowledgeQuery:
                 "rationale": council_decision.rationale,
                 "created_at": council_decision.created_at,
             },
+            "assessment_reviews": [
+                {
+                    "id": review.id,
+                    "reviewer_id": review.reviewer_id,
+                    "position": review.position,
+                    "rationale": review.rationale,
+                    "created_at": review.created_at,
+                }
+                for review in (self.ledger.assessment_reviews[rid] for rid in claim.assessment_review_ids)
+            ],
             "authenticated_is_not_true": True,
             "history": [event.__dict__ for event in self.ledger.history(claim_id)],
         }
 
-    def search(self, text: str) -> list[dict[str, Any]]:
+    def search(self, text: str, *, limit: int = 50) -> list[dict[str, Any]]:
         needle = text.strip().lower()
         if not needle:
             return []
+        if limit < 1:
+            raise ValueError("limit must be at least 1")
         return [
             {"id": claim.id, "text": claim.text, "status": claim.status}
             for claim in self.ledger.claims.values()
             if needle in claim.text.lower()
-        ]
+        ][:limit]
