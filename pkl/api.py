@@ -1,9 +1,4 @@
-"""HTTP-facing service adapter for PKL submissions.
-
-The domain rules remain in :mod:`pkl.submissions`; this module translates
-those rules into stable JSON API responses. Reviewer operations require a
-server-side bearer token and public reads expose accepted submissions only.
-"""
+"""HTTP-facing service adapter for PKL submissions."""
 
 from __future__ import annotations
 
@@ -14,7 +9,7 @@ from .submissions import SubmissionError, SubmissionStore
 
 
 class SubmissionAPI:
-    """Small dependency-free API adapter suitable for HTTP or other frontends."""
+    """Dependency-free API adapter with stable public/reviewer boundaries."""
 
     def __init__(self, store: SubmissionStore, *, reviewer_token: str | None = None):
         self.store = store
@@ -23,6 +18,7 @@ class SubmissionAPI:
     @staticmethod
     def _submission(item: Any, *, include_private: bool = False) -> dict[str, Any]:
         data = asdict(item)
+        data.pop("rate_limit_id", None)
         if not include_private:
             data.pop("contributor_id", None)
             data.pop("review_note", None)
@@ -39,7 +35,13 @@ class SubmissionAPI:
     def public_submissions(self) -> tuple[int, dict[str, Any]]:
         return 200, {"submissions": [self._submission(item) for item in self.store.public()]}
 
-    def submit(self, payload: dict[str, Any], *, contributor_id: str | None) -> tuple[int, dict[str, Any]]:
+    def submit(
+        self,
+        payload: dict[str, Any],
+        *,
+        contributor_id: str | None,
+        rate_limit_id: str | None = None,
+    ) -> tuple[int, dict[str, Any]]:
         try:
             item = self.store.submit(
                 title=str(payload.get("title", "")),
@@ -49,6 +51,7 @@ class SubmissionAPI:
                 limitations=_strings(payload.get("limitations")),
                 relationships=_strings(payload.get("relationships")),
                 contributor_id=contributor_id,
+                rate_limit_id=rate_limit_id,
             )
         except SubmissionError as exc:
             message = str(exc)
