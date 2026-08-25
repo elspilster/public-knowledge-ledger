@@ -12,7 +12,7 @@ PKL distinguishes evidence quality from contributor reputation, records independ
 
 **Version:** v1 security baseline / working prototype
 
-The core ledger, cryptographic key lifecycle, provenance graph, replay verification, quorum policy, auditable root-council decisions, and explainable claim queries are implemented and covered by automated tests.
+The core ledger, cryptographic key lifecycle, provenance graph, replay verification, quorum policy, auditable root-council decisions, explainable claim queries, public frontend, persistent submission workflow, moderation API, and reviewer console are implemented in the current development slice.
 
 The system is experimental and does not claim to provide absolute truth. Cryptographic authentication proves that a credential signed an event; it does **not** prove that the claim is true.
 
@@ -32,6 +32,26 @@ The system is experimental and does not claim to provide absolute truth. Cryptog
 - Auditable council decisions
 - Explainable claim queries
 - Human and AI participation without automatic authority
+- Submission -> review -> publication lifecycle
+
+## Public submission API
+
+The M9 submission layer deliberately separates **proposal from publication**. `POST /api/submissions` creates a pending record. `GET /api/public/submissions` returns accepted records only. Pending, rejected, and withdrawn submissions never appear in the public projection.
+
+The API is implemented without a mandatory web-framework dependency, so it can run locally with the Python standard library:
+
+```powershell
+$env:PKL_REVIEWER_TOKEN = "replace-with-a-long-random-secret"
+python -m pkl.server
+```
+
+The local API listens on `http://127.0.0.1:8787` by default. During frontend development, Vite proxies `/api` to that address. For a production deployment, place the API behind HTTPS and a reverse proxy, and set `VITE_PKL_API_URL` to the public API origin/path as appropriate.
+
+## Reviewer workflow
+
+Open **Reviewer access** in the frontend and provide the server-side `PKL_REVIEWER_TOKEN` plus a reviewer ID. Authenticated reviewers can inspect the pending queue, accept or reject submissions, and inspect the moderation audit trail.
+
+The reviewer token is never stored in the repository. The browser keeps it only in session storage for the current session.
 
 ## Explain a claim
 
@@ -51,11 +71,12 @@ The response deliberately includes `authenticated_is_not_true: True` to make the
 - `SPECIFICATION.md` — technical and data-model direction
 - `docs/` — focused design documents
 - `pkl/` — implementation
+- `frontend/` — public React/Vite working model
 - `tests/` — automated tests
 
 ## Security posture
 
-PKL's security work is adversarial rather than trust-based. The test suite covers signature validation, key lifecycle and rotation, replay/tamper detection, quorum invariants, root-of-trust delegation, provenance conflicts, and council quorum behaviour.
+PKL's security work is adversarial rather than trust-based. The test suite covers signature validation, key lifecycle and rotation, replay/tamper detection, quorum invariants, root-of-trust delegation, provenance conflicts, submission abuse controls, moderation boundaries, and public/private visibility.
 
 ## Contributing
 
