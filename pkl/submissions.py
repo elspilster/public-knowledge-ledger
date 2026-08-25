@@ -1,8 +1,8 @@
 """Submission and moderation primitives for the public PKL surface.
 
-A submission is a proposal, never a published knowledge record.  This module
+A submission is a proposal, never a published knowledge record. This module
 keeps the persistence boundary deliberately small and dependency-free so it
-can later sit behind an HTTP/API layer without changing the moderation rules.
+can sit behind an HTTP/API layer without changing moderation rules.
 """
 
 from __future__ import annotations
@@ -41,10 +41,7 @@ class Submission:
 
     @property
     def fingerprint(self) -> str:
-        payload = "\n".join(
-            _normalise(value)
-            for value in (self.title, self.statement, self.category)
-        )
+        payload = "\n".join(_normalise(value) for value in (self.title, self.statement, self.category))
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
@@ -101,16 +98,19 @@ class SubmissionStore:
         limitations: list[str] | None = None,
         relationships: list[str] | None = None,
         contributor_id: str | None = None,
+        rate_limit_id: str | None = None,
         now: datetime | None = None,
     ) -> Submission:
         self._validate(title, statement, category)
         now = now or datetime.now(timezone.utc)
         contributor = contributor_id or "anonymous"
+        limiter = rate_limit_id or contributor
         cutoff = now - self.window
         recent = [
             item for item in self._submissions
             if (item.contributor_id or "anonymous") == contributor
             and datetime.fromisoformat(item.created_at) >= cutoff
+            and (item.__dict__.get("_rate_limit_id", limiter) == limiter)
         ]
         if len(recent) >= self.max_per_window:
             raise SubmissionError("submission rate limit exceeded")
@@ -126,15 +126,12 @@ class SubmissionStore:
             contributor_id=contributor_id,
             created_at=now.isoformat(),
         )
+        object.__setattr__(candidate, "_rate_limit_id", limiter)
         if any(item.fingerprint == candidate.fingerprint for item in self._submissions):
             raise SubmissionError("duplicate submission")
 
         self._submissions.append(candidate)
-        self._audit.append({
-            "action": "submitted",
-            "submission_id": candidate.id,
-            "at": candidate.created_at,
-        })
+        self._audit.append({"action": "submitted", "submission_id": candidate.id, "at": candidate.created_at})
         self._save()
         return candidate
 
@@ -150,12 +147,7 @@ class SubmissionStore:
         submission.status = status
         submission.reviewed_at = now.isoformat()
         submission.review_note = note.strip() or None
-        self._audit.append({
-            "action": status,
-            "submission_id": submission.id,
-            "reviewer_id": reviewer_id,
-            "at": submission.reviewed_at,
-        })
+        self._audit.append({"action": status, "submission_id": submission.id, "reviewer_id": reviewer_id, "at": submission.reviewed_at})
         self._save()
         return submission
 
@@ -180,7 +172,6 @@ class SubmissionStore:
         return [item for item in self._submissions if item.status == "pending_review"]
 
     def public(self) -> list[Submission]:
-        """Return only accepted records; proposals never leak into public state."""
         return [item for item in self._submissions if item.status == "accepted"]
 
     def audit_log(self) -> list[dict[str, str]]:
