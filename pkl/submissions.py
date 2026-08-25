@@ -1,9 +1,4 @@
-"""Submission and moderation primitives for the public PKL surface.
-
-A submission is a proposal, never a published knowledge record. This module
-keeps the persistence boundary deliberately small and dependency-free so it
-can sit behind an HTTP/API layer without changing moderation rules.
-"""
+"""Submission and moderation primitives for the public PKL surface."""
 
 from __future__ import annotations
 
@@ -15,7 +10,6 @@ from pathlib import Path
 import tempfile
 from typing import Literal
 import uuid
-
 
 SubmissionStatus = Literal["pending_review", "accepted", "rejected", "withdrawn"]
 
@@ -34,6 +28,7 @@ class Submission:
     limitations: list[str] = field(default_factory=list)
     relationships: list[str] = field(default_factory=list)
     contributor_id: str | None = None
+    rate_limit_id: str | None = None
     status: SubmissionStatus = "pending_review"
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     reviewed_at: str | None = None
@@ -108,9 +103,8 @@ class SubmissionStore:
         cutoff = now - self.window
         recent = [
             item for item in self._submissions
-            if (item.contributor_id or "anonymous") == contributor
+            if (item.rate_limit_id or item.contributor_id or "anonymous") == limiter
             and datetime.fromisoformat(item.created_at) >= cutoff
-            and (item.__dict__.get("_rate_limit_id", limiter) == limiter)
         ]
         if len(recent) >= self.max_per_window:
             raise SubmissionError("submission rate limit exceeded")
@@ -124,9 +118,9 @@ class SubmissionStore:
             limitations=[item.strip() for item in (limitations or []) if item.strip()],
             relationships=[item.strip() for item in (relationships or []) if item.strip()],
             contributor_id=contributor_id,
+            rate_limit_id=limiter,
             created_at=now.isoformat(),
         )
-        object.__setattr__(candidate, "_rate_limit_id", limiter)
         if any(item.fingerprint == candidate.fingerprint for item in self._submissions):
             raise SubmissionError("duplicate submission")
 
