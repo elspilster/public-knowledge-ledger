@@ -2,10 +2,6 @@
 
 Usage:
     PKL_REVIEWER_TOKEN=... python -m pkl.server
-
-The server is intentionally small: production deployments can put it behind
-TLS, a reverse proxy, and their preferred identity provider without changing
-the submission domain or API contract.
 """
 
 from __future__ import annotations
@@ -32,7 +28,8 @@ class PKLHandler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Contributor-ID")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.end_headers()
-        self.wfile.write(encoded)
+        if status != 204:
+            self.wfile.write(encoded)
 
     def _token(self) -> str | None:
         value = self.headers.get("Authorization", "")
@@ -77,8 +74,9 @@ class PKLHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/submissions":
-            contributor = self.headers.get("X-Contributor-ID") or self.client_address[0]
-            self._json(*self.api.submit(payload, contributor_id=contributor))
+            contributor = self.headers.get("X-Contributor-ID") or f"ip:{self.client_address[0]}"
+            rate_limit_id = f"ip:{self.client_address[0]}"
+            self._json(*self.api.submit(payload, contributor_id=contributor, rate_limit_id=rate_limit_id))
             return
 
         prefix = "/api/reviewer/submissions/"
@@ -98,17 +96,13 @@ class PKLHandler(BaseHTTPRequestHandler):
 
 def create_server(*, data_path: str | Path = "data/submissions.json", host: str = "127.0.0.1", port: int = 8787) -> ThreadingHTTPServer:
     store = SubmissionStore(data_path)
-    token = os.getenv("PKL_REVIEWER_TOKEN")
-    api = SubmissionAPI(store, reviewer_token=token)
+    api = SubmissionAPI(store, reviewer_token=os.getenv("PKL_REVIEWER_TOKEN"))
     handler = type("ConfiguredPKLHandler", (PKLHandler,), {"api": api})
     return ThreadingHTTPServer((host, port), handler)
 
 
 def main() -> None:
-    server = create_server(
-        host=os.getenv("PKL_API_HOST", "127.0.0.1"),
-        port=int(os.getenv("PKL_API_PORT", "8787")),
-    )
+    server = create_server(host=os.getenv("PKL_API_HOST", "127.0.0.1"), port=int(os.getenv("PKL_API_PORT", "8787")))
     print(f"PKL API listening on http://{server.server_address[0]}:{server.server_address[1]}")
     server.serve_forever()
 
