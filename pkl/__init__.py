@@ -5,6 +5,7 @@ from .ledger import Ledger
 from .quorum import QuorumPolicy, Seat
 from .council import CouncilDecision, RootCouncil
 from .query import KnowledgeQuery
+from .submissions import Submission, SubmissionError, SubmissionStore
 
 __all__ = [
     "Assessment",
@@ -18,4 +19,7 @@ __all__ = [
     "CouncilDecision",
     "RootCouncil",
     "KnowledgeQuery",
+    "Submission",
+    "SubmissionError",
+    "SubmissionStore",
 ]
