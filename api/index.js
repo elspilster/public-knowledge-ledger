@@ -1,11 +1,12 @@
-import { put } from "@vercel/blob";
+import { list, put } from "@vercel/blob";
 
 const STORE_PATH = "pkl/submissions.json";
 
 async function readStore() {
-  const url = process.env.PKL_STORE_URL;
-  if (!url) return { submissions: [], audit: [] };
-  const response = await fetch(url, { cache: "no-store" });
+  const { blobs } = await list({ prefix: STORE_PATH, limit: 10 });
+  const blob = blobs.find((item) => item.pathname === STORE_PATH);
+  if (!blob) return { submissions: [], audit: [] };
+  const response = await fetch(blob.url, { cache: "no-store" });
   if (!response.ok) throw new Error("submission store unavailable");
   return response.json();
 }
@@ -13,13 +14,13 @@ async function readStore() {
 async function writeStore(store) {
   const token = process.env.BLOB_READ_WRITE_TOKEN;
   if (!token) throw new Error("submission storage is not configured");
-  const blob = await put(STORE_PATH, JSON.stringify(store, null, 2), {
+  await put(STORE_PATH, JSON.stringify(store, null, 2), {
     access: "public",
     addRandomSuffix: false,
+    allowOverwrite: true,
     contentType: "application/json",
     token,
   });
-  return blob.url;
 }
 
 function normalise(value) {
@@ -31,9 +32,7 @@ function fingerprint(item) {
 }
 
 function validate(item) {
-  if (!normalise(item.title) || !normalise(item.statement) || !normalise(item.category)) {
-    return "title, statement, and category are required";
-  }
+  if (!normalise(item.title) || !normalise(item.statement) || !normalise(item.category)) return "title, statement, and category are required";
   if (String(item.title).trim().length > 240) return "title is too long";
   if (String(item.statement).trim().length > 10000) return "statement is too long";
   if (String(item.category).trim().length > 120) return "category is too long";
@@ -63,7 +62,7 @@ export default async function handler(req, res) {
       const contributorId = req.headers["x-contributor-id"] || null;
       const limiter = contributorId || "anonymous";
       const now = new Date();
-      const cutoff = now.getTime() - 60 * 60 * 1000;
+      const cutoff = now.getTime() - 3600000;
       const recent = store.submissions.filter((item) => (item.rate_limit_id || item.contributor_id || "anonymous") === limiter && Date.parse(item.created_at) >= cutoff);
       if (recent.length >= 5) return json(res, 429, { error: "submission rate limit exceeded", code: "rate_limit" });
 
@@ -82,13 +81,15 @@ export default async function handler(req, res) {
         reviewed_at: null,
         review_note: null,
       };
+
       if (store.submissions.some((item) => fingerprint(item) === fingerprint(candidate))) {
         return json(res, 409, { error: "duplicate submission", code: "duplicate" });
       }
+
       store.submissions.push(candidate);
       store.audit.push({ action: "submitted", submission_id: candidate.id, at: candidate.created_at });
-      const url = await writeStore(store);
-      return json(res, 201, { submission: candidate, store_url: url });
+      await writeStore(store);
+      return json(res, 201, { submission: candidate });
     }
 
     if (path.startsWith("/api/reviewer/")) {
