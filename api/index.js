@@ -48,8 +48,9 @@ function json(res, status, body) {
 }
 
 export default async function handler(req, res) {
+  const path = new URL(req.url, "https://pkl.local").pathname;
+
   try {
-    const path = new URL(req.url, "https://pkl.local").pathname;
     const store = await readStore();
 
     if (req.method === "GET" && path === "/api/public/submissions") {
@@ -90,7 +91,12 @@ export default async function handler(req, res) {
 
       store.submissions.push(candidate);
       store.audit.push({ action: "submitted", submission_id: candidate.id, at: candidate.created_at });
-      await writeStore(store);
+      try {
+        await writeStore(store);
+      } catch (error) {
+        console.error("submission write failed", error);
+        return json(res, 503, { error: "submission storage write failed", code: "storage_write" });
+      }
       return json(res, 201, { submission: candidate });
     }
 
@@ -123,7 +129,7 @@ export default async function handler(req, res) {
 
     return json(res, 404, { error: "not found" });
   } catch (error) {
-    console.error(error);
-    return json(res, 500, { error: "internal server error" });
+    console.error("submission API read failed", error);
+    return json(res, 503, { error: "submission storage read failed", code: "storage_read" });
   }
 }
