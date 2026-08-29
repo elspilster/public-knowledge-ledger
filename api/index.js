@@ -3,7 +3,9 @@ import { list, put } from "@vercel/blob";
 const STORE_PATH = "pkl/submissions.json";
 
 async function readStore() {
-  const { blobs } = await list({ prefix: STORE_PATH, limit: 10 });
+  const token = process.env.BLOB_READ_WRITE_TOKEN;
+  if (!token) throw new Error("submission storage is not configured");
+  const { blobs } = await list({ prefix: STORE_PATH, limit: 10, token });
   const blob = blobs.find((item) => item.pathname === STORE_PATH);
   if (!blob) return { submissions: [], audit: [] };
   const response = await fetch(blob.url, { cache: "no-store" });
