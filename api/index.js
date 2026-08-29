@@ -2,26 +2,36 @@ import { list, put } from "@vercel/blob";
 
 const STORE_PATH = "pkl/submissions.json";
 
+function blobOptions() {
+  const oidcToken = process.env.VERCEL_OIDC_TOKEN;
+  const storeId = process.env.BLOB_STORE_ID;
+  const legacyToken = process.env.BLOB_READ_WRITE_TOKEN;
+  if (oidcToken && storeId) return { token: oidcToken, storeId };
+  if (legacyToken) return { token: legacyToken };
+  throw new Error("submission storage is not configured");
+}
+
 async function readStore() {
-  const token = process.env.BLOB_READ_WRITE_TOKEN;
-  if (!token) throw new Error("submission storage is not configured");
-  const { blobs } = await list({ prefix: STORE_PATH, limit: 10, token });
+  const options = blobOptions();
+  const { blobs } = await list({ prefix: STORE_PATH, limit: 10, ...options });
   const blob = blobs.find((item) => item.pathname === STORE_PATH);
   if (!blob) return { submissions: [], audit: [] };
-  const response = await fetch(blob.url, { cache: "no-store" });
-  if (!response.ok) throw new Error("submission store unavailable");
+  const response = await fetch(blob.url, {
+    cache: "no-store",
+    headers: { Authorization: `Bearer ${options.token}` },
+  });
+  if (!response.ok) throw new Error(`submission store unavailable (${response.status})`);
   return response.json();
 }
 
 async function writeStore(store) {
-  const token = process.env.BLOB_READ_WRITE_TOKEN;
-  if (!token) throw new Error("submission storage is not configured");
+  const options = blobOptions();
   await put(STORE_PATH, JSON.stringify(store, null, 2), {
-    access: "public",
+    access: "private",
     addRandomSuffix: false,
     allowOverwrite: true,
     contentType: "application/json",
-    token,
+    ...options,
   });
 }
 
