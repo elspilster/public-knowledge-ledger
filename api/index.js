@@ -3,11 +3,11 @@ import { get, list, put } from "@vercel/blob";
 const STORE_PATH = "pkl/submissions.json";
 
 function blobOptions() {
-  const oidcToken = process.env.VERCEL_OIDC_TOKEN;
   const storeId = process.env.BLOB_STORE_ID;
   const legacyToken = process.env.BLOB_READ_WRITE_TOKEN;
-  if (oidcToken && storeId) return { oidcToken, storeId };
+
   if (legacyToken) return { token: legacyToken };
+  if (storeId) return { storeId };
   throw new Error("submission storage is not configured");
 }
 
@@ -17,14 +17,11 @@ async function readStore() {
   const blob = blobs.find((item) => item.pathname === STORE_PATH);
   if (!blob) return { submissions: [], audit: [] };
 
-  const result = await get(blob.pathname, { access: "private", ...options });
-  if (!result || result.statusCode !== 200) {
-    throw new Error(`submission store unavailable (${result?.statusCode ?? 404})`);
-  }
+  const result = await get(blob.url, { access: "private", ...options });
+  if (!result?.stream) throw new Error("submission store unavailable");
 
-  const chunks = [];
-  for await (const chunk of result.stream) chunks.push(Buffer.from(chunk));
-  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  const text = await new Response(result.stream).text();
+  return JSON.parse(text);
 }
 
 async function writeStore(store) {
