@@ -135,6 +135,27 @@ function ClaimForm({ onCancel, onSubmitted }: { onCancel: () => void; onSubmitte
   </section></main>;
 }
 
+
+function ReviewerRecruitment({ onBack, onConsole }: { onBack: () => void; onConsole: () => void }) {
+  const applyUrl = "https://github.com/elspilster/public-knowledge-ledger/issues/new?title=Reviewer%20application%20-%20%5Bname%5D&body=Name%20or%20pseudonym%3A%0ARelevant%20experience%3A%0ASubject%20areas%3A%0AWhy%20I%20want%20to%20review%20for%20PKL%3A%0APotential%20conflicts%20of%20interest%3A%0AApproximate%20availability%3A";
+  return <main className="reviewers-page">
+    <section className="reviewers-hero">
+      <p className="eyebrow">FOUNDING REVIEWER OPPORTUNITY</p>
+      <h1>Help make public knowledge more accountable.</h1>
+      <p className="reviewers-lead">PKL is looking for thoughtful, independent people to assess submitted claims, examine evidence, record uncertainty, and help build a transparent public review process.</p>
+      <div className="hero-actions"><a className="primary-button button-link" href={applyUrl} target="_blank" rel="noreferrer">Apply to become a reviewer</a><button className="secondary-button" onClick={onBack} type="button">Explore PKL first</button></div>
+      <p className="opportunity-note">Founding-stage volunteer opportunity. Any future paid roles will be advertised transparently.</p>
+    </section>
+    <section className="reviewer-details">
+      <article><p className="detail-number">01</p><h2>What you’ll do</h2><ul><li>Read claims and examine their cited evidence.</li><li>Check provenance, limitations, contradictions, and uncertainty.</li><li>Record clear reasons for accepting, returning, or rejecting submissions.</li><li>Declare relevant interests and step aside where independence is compromised.</li></ul></article>
+      <article><p className="detail-number">02</p><h2>Who we’re looking for</h2><ul><li>Careful thinkers from academic, professional, technical, journalistic, or lived-experience backgrounds.</li><li>People comfortable saying “uncertain” when evidence is incomplete.</li><li>Reviewers willing to work to a published process and leave an auditable trail.</li><li>No formal qualification is mandatory; sound judgement and honesty matter.</li></ul></article>
+      <article><p className="detail-number">03</p><h2>How trust is protected</h2><ul><li>Reviewer identity or an accountable public pseudonym is recorded.</li><li>Conflicts of interest must be disclosed.</li><li>Decisions require written reasons and remain open to later challenge.</li><li>Reviewers assess the evidence currently recorded, not whether a claim is eternally true.</li></ul></article>
+    </section>
+    <section className="reviewer-cta"><div><p className="eyebrow">EARLY TEAM</p><h2>Shape the review system with us.</h2><p>Founding reviewers will help test the process, improve the guidance, and establish a culture of independence, fairness, and transparent disagreement.</p></div><a className="primary-button button-link" href={applyUrl} target="_blank" rel="noreferrer">Start your application</a></section>
+    <section className="existing-reviewer"><p>Already approved as a PKL reviewer?</p><button className="text-button" onClick={onConsole} type="button">Open the secure reviewer console →</button></section>
+  </main>;
+}
+
 function Reviewer({ onBack }: { onBack: () => void }) {
   const [token, setToken] = useState(() => sessionStorage.getItem("pkl_reviewer_token") || "");
   const [reviewerId, setReviewerId] = useState(() => sessionStorage.getItem("pkl_reviewer_id") || "");
@@ -180,7 +201,7 @@ function Reviewer({ onBack }: { onBack: () => void }) {
 }
 
 function App() {
-  const [page, setPage] = useState<"home" | "browse" | "claim" | "submit" | "reviewer">("home");
+  const [page, setPage] = useState<"home" | "browse" | "claim" | "submit" | "reviewers" | "reviewer">(() => window.location.pathname === "/reviewers" ? "reviewers" : "home");
   const [selected, setSelected] = useState<Claim>(seedClaims[0]);
   const [claims, setClaims] = useState<Claim[]>(seedClaims);
   const [notice, setNotice] = useState("");
@@ -194,8 +215,8 @@ function App() {
   if (page === "browse") return <Browse claims={claims} onSelect={(claim) => { setSelected(claim); setPage("claim"); }} onBack={() => setPage("home")} />;
   if (page === "claim") return <><header className="site-header"><button className="back-button" onClick={() => setPage("browse")} type="button">← Public Knowledge Ledger</button></header><ClaimRecord {...selected} /></>;
   if (page === "submit") return <><header className="site-header"><button className="back-button" onClick={() => setPage("home")} type="button">← Public Knowledge Ledger</button></header><ClaimForm onCancel={() => setPage("home")} onSubmitted={(message) => { setNotice(message); setPage("home"); }} /></>;
-  if (page === "reviewer") return <><header className="site-header"><button className="back-button" onClick={() => setPage("home")} type="button">← Public Knowledge Ledger</button></header><Reviewer onBack={() => setPage("home")} /></>;
-  return <><Home onBrowse={() => setPage("browse")} onSubmit={() => setPage("submit")} onReviewer={() => setPage("reviewer")} />{notice && <div className="notice" role="status">{notice}<button onClick={() => setNotice("")} type="button">Dismiss</button></div>}</>;
+  if (page === "reviewers") return <ReviewerRecruitment onBack={() => { window.history.pushState({}, "", "/"); setPage("home"); }} onConsole={() => setPage("reviewer")} />;\n  if (page === "reviewer") return <><header className="site-header"><button className="back-button" onClick={() => setPage("home")} type="button">← Public Knowledge Ledger</button></header><Reviewer onBack={() => setPage("home")} /></>;
+  return <><Home onBrowse={() => setPage("browse")} onSubmit={() => setPage("submit")} onReviewer={() => { window.history.pushState({}, "", "/reviewers"); setPage("reviewers"); }} />{notice && <div className="notice" role="status">{notice}<button onClick={() => setNotice("")} type="button">Dismiss</button></div>}</>;
 }
 
 export default App;
