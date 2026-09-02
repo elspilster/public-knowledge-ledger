@@ -75,7 +75,9 @@ function Home({ onBrowse, onSubmit, onReviewer }: { onBrowse: () => void; onSubm
       <article><h2>Evidence</h2><p>A visible trail showing what supports a claim.</p></article>
       <article><h2>Uncertainty</h2><p>Limitations and unanswered questions remain part of the record.</p></article>
     </section>
-    <section className="about-ledger"><p className="eyebrow">THE LEDGER</p><h2>Knowledge is allowed to change.</h2><p>PKL records are evidence assessments at a particular point in time. New evidence can strengthen, weaken, revise, or overturn an assessment.</p></section>\n  </main></>;\n}
+    <section className="about-ledger"><p className="eyebrow">THE LEDGER</p><h2>Knowledge is allowed to change.</h2><p>PKL records are evidence assessments at a particular point in time. New evidence can strengthen, weaken, revise, or overturn an assessment.</p></section>
+  </main></>;
+}
 
 function Browse({ claims, onSelect, onBack }: { claims: Claim[]; onSelect: (claim: Claim) => void; onBack: () => void }) {
   const [query, setQuery] = useState("");
