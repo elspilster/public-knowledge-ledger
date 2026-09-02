@@ -215,7 +215,8 @@ function App() {
   if (page === "browse") return <Browse claims={claims} onSelect={(claim) => { setSelected(claim); setPage("claim"); }} onBack={() => setPage("home")} />;
   if (page === "claim") return <><header className="site-header"><button className="back-button" onClick={() => setPage("browse")} type="button">← Public Knowledge Ledger</button></header><ClaimRecord {...selected} /></>;
   if (page === "submit") return <><header className="site-header"><button className="back-button" onClick={() => setPage("home")} type="button">← Public Knowledge Ledger</button></header><ClaimForm onCancel={() => setPage("home")} onSubmitted={(message) => { setNotice(message); setPage("home"); }} /></>;
-  if (page === "reviewers") return <ReviewerRecruitment onBack={() => { window.history.pushState({}, "", "/"); setPage("home"); }} onConsole={() => setPage("reviewer")} />;\n  if (page === "reviewer") return <><header className="site-header"><button className="back-button" onClick={() => setPage("home")} type="button">← Public Knowledge Ledger</button></header><Reviewer onBack={() => setPage("home")} /></>;
+  if (page === "reviewers") return <ReviewerRecruitment onBack={() => { window.history.pushState({}, "", "/"); setPage("home"); }} onConsole={() => setPage("reviewer")} />;
+  if (page === "reviewer") return <><header className="site-header"><button className="back-button" onClick={() => setPage("home")} type="button">← Public Knowledge Ledger</button></header><Reviewer onBack={() => setPage("home")} /></>;
   return <><Home onBrowse={() => setPage("browse")} onSubmit={() => setPage("submit")} onReviewer={() => { window.history.pushState({}, "", "/reviewers"); setPage("reviewers"); }} />{notice && <div className="notice" role="status">{notice}<button onClick={() => setNotice("")} type="button">Dismiss</button></div>}</>;
 }
 
