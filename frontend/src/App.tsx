@@ -5,6 +5,15 @@ import "./App.css";
 
 const API_BASE = (import.meta.env.VITE_PKL_API_URL || "/api").replace(/\/$/, "");
 
+function contributorId() {
+  const key = "pkl_contributor_id";
+  const existing = localStorage.getItem(key);
+  if (existing) return existing;
+  const created = `browser-${crypto.randomUUID()}`;
+  localStorage.setItem(key, created);
+  return created;
+}
+
 const seedClaims: Claim[] = [
   {
     id: "PKL-BIO-001",
@@ -112,7 +121,7 @@ function ClaimForm({ onCancel, onSubmitted }: { onCancel: () => void; onSubmitte
     try {
       await apiRequest("/submissions", {
         method: "POST",
-        headers: { "X-Contributor-ID": `browser-${crypto.randomUUID()}` },
+        headers: { "X-Contributor-ID": contributorId() },
         body: JSON.stringify({ title, statement, category, evidence: splitLines(evidence), limitations: splitLines(limitations), relationships: splitLines(relationships) }),
       });
       onSubmitted("Submitted for review. It will not appear publicly until a reviewer accepts it.");

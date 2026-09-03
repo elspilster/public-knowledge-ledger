@@ -38,6 +38,10 @@ The system is experimental and does not claim to provide absolute truth. Cryptog
 
 The M9 submission layer deliberately separates **proposal from publication**. `POST /api/submissions` creates a pending record. `GET /api/public/submissions` returns accepted records only. Pending, rejected, and withdrawn submissions never appear in the public projection.
 
+`GET /api/health` verifies that the deployed function can read its durable store. `GET /api/v1/claims` is the stable, versioned public integration endpoint. Internal contributor, rate-limit, and reviewer-note fields are removed from all public projections.
+
+Commercial API access is not enabled yet. PKL will keep core public access available and charge later for higher limits, monitoring, private workspaces, support, and service commitments—not for favourable assessment outcomes.
+
 The API is implemented without a mandatory web-framework dependency, so it can run locally with the Python standard library:
 
 ```powershell
