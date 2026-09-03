@@ -1,6 +1,7 @@
 import { get, list, put } from "@vercel/blob";
 
 const STORE_PATH = "pkl/submissions.json";
+const APPLICATIONS_PATH = "pkl/reviewer-applications.json";
 
 function blobOptions() {
   const storeId = process.env.BLOB_STORE_ID;
@@ -11,11 +12,11 @@ function blobOptions() {
   throw new Error("submission storage is not configured");
 }
 
-async function readStore() {
+async function readJson(path, fallback) {
   const options = blobOptions();
-  const { blobs } = await list({ prefix: STORE_PATH, limit: 10, ...options });
-  const blob = blobs.find((item) => item.pathname === STORE_PATH);
-  if (!blob) return { submissions: [], audit: [] };
+  const { blobs } = await list({ prefix: path, limit: 10, ...options });
+  const blob = blobs.find((item) => item.pathname === path);
+  if (!blob) return fallback;
 
   const result = await get(blob.url, { access: "private", ...options });
   if (!result?.stream) throw new Error("submission store unavailable");
@@ -24,9 +25,9 @@ async function readStore() {
   return JSON.parse(text);
 }
 
-async function writeStore(store) {
+async function writeJson(path, value) {
   const options = blobOptions();
-  await put(STORE_PATH, JSON.stringify(store, null, 2), {
+  await put(path, JSON.stringify(value, null, 2), {
     access: "private",
     addRandomSuffix: false,
     allowOverwrite: true,
@@ -34,6 +35,11 @@ async function writeStore(store) {
     ...options,
   });
 }
+
+const readStore = () => readJson(STORE_PATH, { submissions: [], audit: [] });
+const writeStore = (store) => writeJson(STORE_PATH, store);
+const readApplications = () => readJson(APPLICATIONS_PATH, { applications: [] });
+const writeApplications = (store) => writeJson(APPLICATIONS_PATH, store);
 
 function normalise(value) {
   return String(value ?? "").trim().toLowerCase().replace(/\s+/g, " ");
@@ -48,6 +54,19 @@ function validate(item) {
   if (String(item.title).trim().length > 240) return "title is too long";
   if (String(item.statement).trim().length > 10000) return "statement is too long";
   if (String(item.category).trim().length > 120) return "category is too long";
+  return null;
+}
+
+export function validateReviewerApplication(item) {
+  if (!item || typeof item !== "object") return "application details are required";
+  const required = ["name", "email", "background", "subject_areas", "motivation", "availability", "conflicts"];
+  if (required.some((field) => !String(item[field] ?? "").trim())) return "please complete every application field";
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(item.email).trim())) return "please enter a valid email address";
+  if (item.consent !== true) return "please confirm the privacy notice";
+  const limits = { name: 120, email: 254, background: 2000, subject_areas: 1000, motivation: 3000, availability: 1000, conflicts: 2000 };
+  for (const [field, limit] of Object.entries(limits)) {
+    if (String(item[field]).trim().length > limit) return `${field.replaceAll("_", " ")} is too long`;
+  }
   return null;
 }
 
@@ -104,6 +123,67 @@ export default async function handler(req, res) {
       if (supplied !== configuredToken) return json(res, 401, { error: "reviewer authentication required", code: "unauthorized" });
     }
 
+    if (req.method === "POST" && path === "/api/reviewer-applications") {
+      const body = parseBody(req);
+      if (!body) return json(res, 400, { error: "request body must be valid JSON", code: "invalid_json" });
+      const validationError = validateReviewerApplication(body);
+      if (validationError) return json(res, 400, { error: validationError, code: "validation" });
+
+      let applications;
+      try {
+        applications = await readApplications();
+      } catch (error) {
+        console.error("reviewer application storage read failed", error);
+        return json(res, 503, { error: "application storage is temporarily unavailable", code: "application_storage_read" });
+      }
+
+      const contributorId = req.headers["x-contributor-id"] || "anonymous";
+      const now = new Date();
+      const cutoff = now.getTime() - 3600000;
+      const recent = applications.applications.filter((item) => item.rate_limit_id === contributorId && Date.parse(item.created_at) >= cutoff);
+      if (recent.length >= 3) return json(res, 429, { error: "application rate limit exceeded", code: "rate_limit" });
+
+      const application = {
+        id: `PKL-REVAPP-${crypto.randomUUID().replaceAll("-", "").slice(0, 12)}`,
+        name: String(body.name).trim(),
+        email: String(body.email).trim(),
+        background: String(body.background).trim(),
+        subject_areas: String(body.subject_areas).trim(),
+        motivation: String(body.motivation).trim(),
+        availability: String(body.availability).trim(),
+        conflicts: String(body.conflicts).trim(),
+        rate_limit_id: contributorId,
+        status: "pending",
+        created_at: now.toISOString(),
+      };
+      applications.applications.push(application);
+      try {
+        await writeApplications(applications);
+      } catch (error) {
+        console.error("reviewer application storage write failed", error);
+        return json(res, 503, { error: "application could not be saved", code: "application_storage_write" });
+      }
+      return json(res, 201, { application: { id: application.id, status: application.status, created_at: application.created_at } });
+    }
+
+    if (req.method === "GET" && path === "/api/reviewer/applications") {
+      try {
+        const applications = await readApplications();
+        return json(res, 200, { applications: applications.applications.map(({ rate_limit_id: _rateLimitId, ...application }) => application) });
+      } catch (error) {
+        console.error("reviewer application storage read failed", error);
+        return json(res, 503, { error: "application storage is temporarily unavailable", code: "application_storage_read" });
+      }
+    }
+
+    let submissionBody = null;
+    if (req.method === "POST" && path === "/api/submissions") {
+      submissionBody = parseBody(req);
+      if (!submissionBody) return json(res, 400, { error: "request body must be valid JSON", code: "invalid_json" });
+      const error = validate(submissionBody);
+      if (error) return json(res, 400, { error, code: "validation" });
+    }
+
     const store = await readStore();
 
     if (req.method === "GET" && path === "/api/public/submissions") {
@@ -118,10 +198,7 @@ export default async function handler(req, res) {
     }
 
     if (req.method === "POST" && path === "/api/submissions") {
-      const body = parseBody(req);
-      if (!body) return json(res, 400, { error: "request body must be valid JSON", code: "invalid_json" });
-      const error = validate(body);
-      if (error) return json(res, 400, { error, code: "validation" });
+      const body = submissionBody;
 
       const contributorId = req.headers["x-contributor-id"] || null;
       const limiter = contributorId || "anonymous";
