@@ -53,6 +53,19 @@ type Submission = Claim & {
   review_note?: string | null;
 };
 
+type ReviewerApplication = {
+  id: string;
+  name: string;
+  email: string;
+  background: string;
+  subject_areas: string;
+  motivation: string;
+  availability: string;
+  conflicts: string;
+  status: string;
+  created_at: string;
+};
+
 async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
     ...options,
@@ -145,14 +158,13 @@ function ClaimForm({ onCancel, onSubmitted }: { onCancel: () => void; onSubmitte
 }
 
 
-function ReviewerRecruitment({ onBack, onConsole }: { onBack: () => void; onConsole: () => void }) {
-  const applyUrl = "https://github.com/elspilster/public-knowledge-ledger/issues/new?title=Reviewer%20application%20-%20%5Bname%5D&body=Name%20or%20pseudonym%3A%0ARelevant%20experience%3A%0ASubject%20areas%3A%0AWhy%20I%20want%20to%20review%20for%20PKL%3A%0APotential%20conflicts%20of%20interest%3A%0AApproximate%20availability%3A";
+function ReviewerRecruitment({ onBack, onApply, onConsole }: { onBack: () => void; onApply: () => void; onConsole: () => void }) {
   return <main className="reviewers-page">
     <section className="reviewers-hero">
       <p className="eyebrow">FOUNDING REVIEWER OPPORTUNITY</p>
       <h1>Help make public knowledge more accountable.</h1>
       <p className="reviewers-lead">PKL is looking for thoughtful, independent people to assess submitted claims, examine evidence, record uncertainty, and help build a transparent public review process.</p>
-      <div className="hero-actions"><a className="primary-button button-link" href={applyUrl} target="_blank" rel="noreferrer">Apply to become a reviewer</a><button className="secondary-button" onClick={onBack} type="button">Explore PKL first</button></div>
+      <div className="hero-actions"><button className="primary-button" onClick={onApply} type="button">Apply to become a reviewer</button><button className="secondary-button" onClick={onBack} type="button">Explore PKL first</button></div>
       <p className="opportunity-note">Founding-stage volunteer opportunity. Any future paid roles will be advertised transparently.</p>
     </section>
     <section className="reviewer-details">
@@ -160,9 +172,55 @@ function ReviewerRecruitment({ onBack, onConsole }: { onBack: () => void; onCons
       <article><p className="detail-number">02</p><h2>Who we’re looking for</h2><ul><li>Careful thinkers from academic, professional, technical, journalistic, or lived-experience backgrounds.</li><li>People comfortable saying “uncertain” when evidence is incomplete.</li><li>Reviewers willing to work to a published process and leave an auditable trail.</li><li>No formal qualification is mandatory; sound judgement and honesty matter.</li></ul></article>
       <article><p className="detail-number">03</p><h2>How trust is protected</h2><ul><li>Reviewer identity or an accountable public pseudonym is recorded.</li><li>Conflicts of interest must be disclosed.</li><li>Decisions require written reasons and remain open to later challenge.</li><li>Reviewers assess the evidence currently recorded, not whether a claim is eternally true.</li></ul></article>
     </section>
-    <section className="reviewer-cta"><div><p className="eyebrow">EARLY TEAM</p><h2>Shape the review system with us.</h2><p>Founding reviewers will help test the process, improve the guidance, and establish a culture of independence, fairness, and transparent disagreement.</p></div><a className="primary-button button-link" href={applyUrl} target="_blank" rel="noreferrer">Start your application</a></section>
+    <section className="reviewer-cta"><div><p className="eyebrow">EARLY TEAM</p><h2>Shape the review system with us.</h2><p>Founding reviewers will help test the process, improve the guidance, and establish a culture of independence, fairness, and transparent disagreement.</p></div><button className="primary-button" onClick={onApply} type="button">Start your application</button></section>
     <section className="existing-reviewer"><p>Already approved as a PKL reviewer?</p><button className="text-button" onClick={onConsole} type="button">Open the secure reviewer console →</button></section>
   </main>;
+}
+
+function ReviewerApplicationForm({ onBack }: { onBack: () => void }) {
+  const [form, setForm] = useState({ name: "", email: "", background: "", subject_areas: "", motivation: "", availability: "", conflicts: "", consent: false });
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [applicationId, setApplicationId] = useState("");
+
+  function update(field: keyof typeof form, value: string | boolean) {
+    setForm((current) => ({ ...current, [field]: value }));
+  }
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setSaving(true); setError("");
+    try {
+      const response = await apiRequest<{ application: { id: string } }>("/reviewer-applications", {
+        method: "POST",
+        headers: { "X-Contributor-ID": contributorId() },
+        body: JSON.stringify(form),
+      });
+      setApplicationId(response.application.id);
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Application failed.");
+    } finally { setSaving(false); }
+  }
+
+  if (applicationId) return <main className="claim-form-page"><section className="claim-form-card application-success" role="status">
+    <p className="eyebrow">APPLICATION RECEIVED</p><h1>Thank you.</h1><p>PKL has received your reviewer application. We’ll use the email address you supplied if we want to discuss the role with you.</p><p className="application-reference">Reference: <strong>{applicationId}</strong></p><button className="primary-button" onClick={onBack} type="button">Back to reviewer information</button>
+  </section></main>;
+
+  return <main className="claim-form-page"><section className="claim-form-card reviewer-application-card">
+    <p className="eyebrow">REVIEWER APPLICATION</p><h1>Tell us how you could contribute.</h1><p className="form-intro">We welcome careful thinkers from academic, professional, technical, journalistic and lived-experience backgrounds.</p>
+    <div className="privacy-note"><strong>Your application is private.</strong><p>It is stored separately from the public ledger and is visible only to authorised PKL administrators. Please don’t include identity documents, home addresses or other sensitive personal information.</p></div>
+    <form onSubmit={submit}>
+      <label>Name or accountable pseudonym<input value={form.name} onChange={(event) => update("name", event.target.value)} maxLength={120} required /></label>
+      <label>Email address<input type="email" value={form.email} onChange={(event) => update("email", event.target.value)} maxLength={254} required /></label>
+      <label>Background and relevant experience<textarea value={form.background} onChange={(event) => update("background", event.target.value)} rows={5} maxLength={2000} required /></label>
+      <label>Subject areas you could review<textarea value={form.subject_areas} onChange={(event) => update("subject_areas", event.target.value)} rows={3} maxLength={1000} required /></label>
+      <label>Why would you like to review for PKL?<textarea value={form.motivation} onChange={(event) => update("motivation", event.target.value)} rows={5} maxLength={3000} required /></label>
+      <label>Approximate availability<textarea value={form.availability} onChange={(event) => update("availability", event.target.value)} rows={3} maxLength={1000} placeholder="For example: two hours per month" required /></label>
+      <label>Potential conflicts of interest<textarea value={form.conflicts} onChange={(event) => update("conflicts", event.target.value)} rows={4} maxLength={2000} placeholder="Write ‘none known’ if none apply" required /></label>
+      <label className="consent-field"><input type="checkbox" checked={form.consent} onChange={(event) => update("consent", event.target.checked)} required /><span>I understand that PKL will privately store these details to assess and contact me about reviewer opportunities.</span></label>
+      {error && <p className="error-message" role="alert">{error}</p>}
+      <div className="form-actions"><button className="secondary-button" onClick={onBack} type="button">Cancel</button><button className="primary-button" disabled={saving} type="submit">{saving ? "Sending…" : "Send private application"}</button></div>
+    </form>
+  </section></main>;
 }
 
 function Reviewer({ onBack }: { onBack: () => void }) {
@@ -170,6 +228,7 @@ function Reviewer({ onBack }: { onBack: () => void }) {
   const [reviewerId, setReviewerId] = useState(() => sessionStorage.getItem("pkl_reviewer_id") || "");
   const [queue, setQueue] = useState<Submission[]>([]);
   const [audit, setAudit] = useState<Array<Record<string, string>>>([]);
+  const [applications, setApplications] = useState<ReviewerApplication[]>([]);
   const [error, setError] = useState("");
   const [ready, setReady] = useState(false);
 
@@ -177,11 +236,12 @@ function Reviewer({ onBack }: { onBack: () => void }) {
     setError("");
     try {
       const headers = { Authorization: `Bearer ${token}` };
-      const [queueResponse, auditResponse] = await Promise.all([
+      const [queueResponse, auditResponse, applicationsResponse] = await Promise.all([
         apiRequest<{ submissions: Submission[] }>("/reviewer/submissions", { headers }),
         apiRequest<{ audit: Array<Record<string, string>> }>("/reviewer/audit", { headers }),
+        apiRequest<{ applications: ReviewerApplication[] }>("/reviewer/applications", { headers }),
       ]);
-      setQueue(queueResponse.submissions); setAudit(auditResponse.audit); setReady(true);
+      setQueue(queueResponse.submissions); setAudit(auditResponse.audit); setApplications(applicationsResponse.applications); setReady(true);
       sessionStorage.setItem("pkl_reviewer_token", token); sessionStorage.setItem("pkl_reviewer_id", reviewerId);
     } catch (requestError) { setReady(false); setError(requestError instanceof Error ? requestError.message : "Reviewer authentication failed."); }
   }
@@ -201,6 +261,8 @@ function Reviewer({ onBack }: { onBack: () => void }) {
     <div className="reviewer-login"><label>Reviewer token<input type="password" value={token} onChange={(event) => setToken(event.target.value)} /></label><label>Reviewer ID<input value={reviewerId} onChange={(event) => setReviewerId(event.target.value)} placeholder="e.g. reviewer-1" /></label><button className="primary-button" onClick={load} type="button">Open queue</button></div>
     {error && <p className="error-message" role="alert">{error}</p>}
     {ready && <>
+      <h2>Reviewer applications ({applications.length})</h2>
+      <div className="review-queue">{applications.slice().reverse().map((application) => <article className="review-card application-card" key={application.id}><p className="pkl-id">{application.id} · {application.created_at}</p><h2>{application.name}</h2><p><a href={`mailto:${application.email}`}>{application.email}</a></p><h3>Background</h3><p>{application.background}</p><h3>Subject areas</h3><p>{application.subject_areas}</p><h3>Motivation</h3><p>{application.motivation}</p><h3>Availability</h3><p>{application.availability}</p><h3>Conflicts declared</h3><p>{application.conflicts}</p></article>)}{applications.length === 0 && <p>No reviewer applications yet.</p>}</div>
       <h2>Pending review ({queue.length})</h2>
       <div className="review-queue">{queue.map((item) => <article className="review-card" key={item.id}><p className="pkl-id">{item.id}</p><h2>{item.title}</h2><p><strong>{item.category}</strong></p><p>{item.statement}</p><p>Submitted by: {item.contributor_id || "anonymous"}</p><div className="form-actions"><button className="secondary-button" onClick={() => decide(item.id, "rejected")} type="button">Reject</button><button className="primary-button" onClick={() => decide(item.id, "accepted")} type="button">Accept & publish</button></div></article>)}{queue.length === 0 && <p>No pending submissions.</p>}</div>
       <h2>Audit trail</h2><div className="audit-list">{audit.slice().reverse().map((event, index) => <p key={`${event.submission_id}-${event.at}-${index}`}><strong>{event.action}</strong> — {event.submission_id} — {event.reviewer_id || "system"} — {event.at}</p>)}</div>
@@ -210,7 +272,7 @@ function Reviewer({ onBack }: { onBack: () => void }) {
 }
 
 function App() {
-  const [page, setPage] = useState<"home" | "browse" | "claim" | "submit" | "reviewers" | "reviewer">(() => window.location.pathname === "/reviewers" ? "reviewers" : "home");
+  const [page, setPage] = useState<"home" | "browse" | "claim" | "submit" | "reviewers" | "reviewer-apply" | "reviewer">(() => window.location.pathname === "/reviewers/apply" ? "reviewer-apply" : window.location.pathname === "/reviewers" ? "reviewers" : "home");
   const [selected, setSelected] = useState<Claim>(seedClaims[0]);
   const [claims, setClaims] = useState<Claim[]>(seedClaims);
   const [notice, setNotice] = useState("");
@@ -224,7 +286,8 @@ function App() {
   if (page === "browse") return <Browse claims={claims} onSelect={(claim) => { setSelected(claim); setPage("claim"); }} onBack={() => setPage("home")} />;
   if (page === "claim") return <><header className="site-header"><button className="back-button" onClick={() => setPage("browse")} type="button">← Public Knowledge Ledger</button></header><ClaimRecord {...selected} /></>;
   if (page === "submit") return <><header className="site-header"><button className="back-button" onClick={() => setPage("home")} type="button">← Public Knowledge Ledger</button></header><ClaimForm onCancel={() => setPage("home")} onSubmitted={(message) => { setNotice(message); setPage("home"); }} /></>;
-  if (page === "reviewers") return <ReviewerRecruitment onBack={() => { window.history.pushState({}, "", "/"); setPage("home"); }} onConsole={() => setPage("reviewer")} />;
+  if (page === "reviewers") return <ReviewerRecruitment onBack={() => { window.history.pushState({}, "", "/"); setPage("home"); }} onApply={() => { window.history.pushState({}, "", "/reviewers/apply"); setPage("reviewer-apply"); }} onConsole={() => setPage("reviewer")} />;
+  if (page === "reviewer-apply") return <><header className="site-header"><button className="back-button" onClick={() => { window.history.pushState({}, "", "/reviewers"); setPage("reviewers"); }} type="button">← Reviewer information</button></header><ReviewerApplicationForm onBack={() => { window.history.pushState({}, "", "/reviewers"); setPage("reviewers"); }} /></>;
   if (page === "reviewer") return <><header className="site-header"><button className="back-button" onClick={() => setPage("home")} type="button">← Public Knowledge Ledger</button></header><Reviewer onBack={() => setPage("home")} /></>;
   return <><Home onBrowse={() => setPage("browse")} onSubmit={() => setPage("submit")} onReviewer={() => { window.history.pushState({}, "", "/reviewers"); setPage("reviewers"); }} />{notice && <div className="notice" role="status">{notice}<button onClick={() => setNotice("")} type="button">Dismiss</button></div>}</>;
 }

@@ -6,6 +6,10 @@
     {
       "source": "/reviewers",
       "destination": "/index.html"
+    },
+    {
+      "source": "/reviewers/apply",
+      "destination": "/index.html"
     }
   ]
 }
