@@ -51,24 +51,75 @@ function validate(item) {
   return null;
 }
 
+function parseBody(req) {
+  if (req.body && typeof req.body === "object") return req.body;
+  try {
+    return JSON.parse(req.body || "{}");
+  } catch {
+    return null;
+  }
+}
+
+export function publicProjection(item) {
+  const {
+    contributor_id: _contributorId,
+    rate_limit_id: _rateLimitId,
+    review_note: _reviewNote,
+    ...publicItem
+  } = item;
+  return publicItem;
+}
+
 function json(res, status, body) {
   res.statusCode = status;
   res.setHeader("Content-Type", "application/json");
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("X-Content-Type-Options", "nosniff");
   res.end(JSON.stringify(body));
 }
 
 export default async function handler(req, res) {
   const path = new URL(req.url, "https://pkl.local").pathname;
 
+  if (req.method === "GET" && path === "/api/health") {
+    try {
+      const store = await readStore();
+      return json(res, 200, {
+        status: "ok",
+        storage: "available",
+        submissions: store.submissions.length,
+        api_version: "v1",
+      });
+    } catch (error) {
+      console.error("submission API health check failed", error);
+      return json(res, 503, { status: "degraded", storage: "unavailable", code: "storage_read" });
+    }
+  }
+
   try {
+    if (path.startsWith("/api/reviewer/")) {
+      const configuredToken = process.env.PKL_REVIEWER_TOKEN;
+      const supplied = (req.headers.authorization || "").replace(/^Bearer\s+/i, "");
+      if (!configuredToken) return json(res, 503, { error: "reviewer API is not configured", code: "reviewer_unconfigured" });
+      if (supplied !== configuredToken) return json(res, 401, { error: "reviewer authentication required", code: "unauthorized" });
+    }
+
     const store = await readStore();
 
     if (req.method === "GET" && path === "/api/public/submissions") {
-      return json(res, 200, { submissions: store.submissions.filter((item) => item.status === "accepted") });
+      return json(res, 200, { submissions: store.submissions.filter((item) => item.status === "accepted").map(publicProjection) });
+    }
+
+    if (req.method === "GET" && path === "/api/v1/claims") {
+      return json(res, 200, {
+        data: store.submissions.filter((item) => item.status === "accepted").map(publicProjection),
+        meta: { api_version: "v1", count: store.submissions.filter((item) => item.status === "accepted").length },
+      });
     }
 
     if (req.method === "POST" && path === "/api/submissions") {
-      const body = typeof req.body === "object" ? req.body : JSON.parse(req.body || "{}");
+      const body = parseBody(req);
+      if (!body) return json(res, 400, { error: "request body must be valid JSON", code: "invalid_json" });
       const error = validate(body);
       if (error) return json(res, 400, { error, code: "validation" });
 
@@ -111,11 +162,6 @@ export default async function handler(req, res) {
     }
 
     if (path.startsWith("/api/reviewer/")) {
-      const configuredToken = process.env.PKL_REVIEWER_TOKEN;
-      const supplied = (req.headers.authorization || "").replace(/^Bearer\s+/i, "");
-      if (!configuredToken) return json(res, 503, { error: "reviewer API is not configured" });
-      if (supplied !== configuredToken) return json(res, 401, { error: "reviewer authentication required" });
-
       if (req.method === "GET" && path === "/api/reviewer/submissions") {
         return json(res, 200, { submissions: store.submissions.filter((item) => item.status === "pending_review") });
       }
@@ -123,7 +169,8 @@ export default async function handler(req, res) {
 
       const match = path.match(/^\/api\/reviewer\/submissions\/([^/]+)\/decision$/);
       if (req.method === "POST" && match) {
-        const body = typeof req.body === "object" ? req.body : JSON.parse(req.body || "{}");
+        const body = parseBody(req);
+        if (!body) return json(res, 400, { error: "request body must be valid JSON", code: "invalid_json" });
         const item = store.submissions.find((entry) => entry.id === decodeURIComponent(match[1]));
         if (!item) return json(res, 404, { error: "submission not found", code: "not_found" });
         if (item.status !== "pending_review") return json(res, 409, { error: "only pending submissions can be moderated", code: "invalid_transition" });
@@ -132,7 +179,12 @@ export default async function handler(req, res) {
         item.reviewed_at = new Date().toISOString();
         item.review_note = String(body.note || "").trim() || null;
         store.audit.push({ action: item.status, submission_id: item.id, reviewer_id: String(body.reviewer_id), at: item.reviewed_at });
-        await writeStore(store);
+        try {
+          await writeStore(store);
+        } catch (error) {
+          console.error("moderation write failed", error);
+          return json(res, 503, { error: "submission storage write failed", code: "storage_write" });
+        }
         return json(res, 200, { submission: item });
       }
     }

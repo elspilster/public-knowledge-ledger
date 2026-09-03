@@ -3,6 +3,9 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "scripts": {
+    "test:api": "node --test tests-js/*.test.js"
+  },
   "dependencies": {
     "@vercel/blob": "^2.8.0"
   }
