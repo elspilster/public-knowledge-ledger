@@ -59,7 +59,7 @@ function splitLines(value: string) {
 }
 
 function Home({ onBrowse, onSubmit, onReviewer }: { onBrowse: () => void; onSubmit: () => void; onReviewer: () => void }) {
-  return <><header className="home-nav"><button className="brand-link" type="button" aria-label="Public Knowledge Ledger home">PKL</button><nav aria-label="Primary navigation"><button className="nav-link" onClick={onBrowse} type="button">Browse ledger</button><button className="nav-reviewer-link" onClick={onReviewer} type="button">Become a reviewer</button></nav></header><main className="landing-page">
+  return <><header className="home-nav"><button className="brand-link" type="button" aria-label="Public Knowledge Ledger home">PKL</button><nav aria-label="Primary navigation"><button className="nav-link" onClick={onBrowse} type="button">Browse ledger</button><a className="nav-help-link" href="/docs/PKL_User_Help_Guide_v1.0.pdf" target="_blank" rel="noreferrer">Help Guide</a><button className="nav-reviewer-link" onClick={onReviewer} type="button">Become a reviewer</button></nav></header><main className="landing-page">
     <section className="hero">
       <p className="eyebrow">PUBLIC KNOWLEDGE LEDGER</p>
       <h1>Knowledge should<br /><span>be traceable.</span></h1>
@@ -75,7 +75,7 @@ function Home({ onBrowse, onSubmit, onReviewer }: { onBrowse: () => void; onSubm
       <article><h2>Evidence</h2><p>A visible trail showing what supports a claim.</p></article>
       <article><h2>Uncertainty</h2><p>Limitations and unanswered questions remain part of the record.</p></article>
     </section>
-    <section className="about-ledger"><p className="eyebrow">THE LEDGER</p><h2>Knowledge is allowed to change.</h2><p>PKL records are evidence assessments at a particular point in time. New evidence can strengthen, weaken, revise, or overturn an assessment.</p></section>
+    <section className="about-ledger"><p className="eyebrow">THE LEDGER</p><h2>Knowledge is allowed to change.</h2><p>PKL records are evidence assessments at a particular point in time. New evidence can strengthen, weaken, revise, or overturn an assessment.</p><div className="resource-links"><a href="/docs/PKL_User_Help_Guide_v1.0.pdf" target="_blank" rel="noreferrer">Read the Help Guide</a><a href="/docs/PKL_User_Help_Guide_v1.0.docx" download>Download Word edition</a></div></section>
   </main></>;
 }
 
